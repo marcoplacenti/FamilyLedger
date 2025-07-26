@@ -1,0 +1,64 @@
+{
+  "name": "family-finance-tracker",
+  "version": "1.0.0",
+  "description": "Desktop app for family finance management",
+  "main": "dist/main.js",
+  "scripts": {
+    "dev": "concurrently \"npm run dev:renderer\" \"npm run dev:main\"",
+    "dev:renderer": "cross-env NODE_ENV=development webpack serve --config webpack.renderer.config.js",
+    "dev:main": "cross-env NODE_ENV=development tsc src/main/*.ts --outDir dist --target ES2020 --module commonjs --esModuleInterop --skipLibCheck && electron dist/main.js",
+    "build": "npm run build:main && npm run build:renderer",
+    "build:main": "cross-env NODE_ENV=production tsc src/main/*.ts --outDir dist --target ES2020 --module commonjs --esModuleInterop --skipLibCheck",
+    "build:renderer": "cross-env NODE_ENV=production webpack --config webpack.renderer.config.js --mode production",
+    "dev:build-and-serve": "npm run build:renderer && npm run dev:main",
+    "package": "npm run build && electron-builder",
+    "test": "jest"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "@types/react": "^18.0.0",
+    "@types/react-dom": "^18.0.0",
+    "@typescript-eslint/eslint-plugin": "^6.0.0",
+    "@typescript-eslint/parser": "^6.0.0",
+    "concurrently": "^8.0.0",
+    "cross-env": "^7.0.3",
+    "css-loader": "^6.8.0",
+    "electron": "^25.0.0",
+    "electron-builder": "^24.0.0",
+    "eslint": "^8.0.0",
+    "html-webpack-plugin": "^5.5.0",
+    "jest": "^29.0.0",
+    "style-loader": "^3.3.0",
+    "ts-loader": "^9.4.0",
+    "typescript": "^5.0.0",
+    "webpack": "^5.88.0",
+    "webpack-cli": "^5.1.0",
+    "webpack-dev-server": "^4.15.0"
+  },
+  "dependencies": {
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "sqlite3": "^5.1.6",
+    "date-fns": "^2.30.0"
+  },
+  "build": {
+    "appId": "com.familyfinance.tracker",
+    "productName": "Family Finance Tracker",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "node_modules/**/*"
+    ],
+    "mac": {
+      "category": "public.app-category.finance"
+    },
+    "win": {
+      "target": "nsis"
+    },
+    "linux": {
+      "target": "AppImage"
+    }
+  }
+}
