@@ -1,0 +1,135 @@
+name: 'Manual Release'
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Release version (e.g., 1.0.0)'
+        required: true
+        type: string
+      prerelease:
+        description: 'Mark as pre-release'
+        required: false
+        default: false
+        type: boolean
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  update-version:
+    permissions:
+      contents: write
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 'lts/*'
+
+      - name: Update package.json version
+        run: |
+          npm version ${{ github.event.inputs.version }} --no-git-tag-version
+          
+      - name: Update Cargo.toml version
+        run: |
+          cd src-tauri
+          sed -i.bak 's/^version = ".*"/version = "${{ github.event.inputs.version }}"/' Cargo.toml
+          rm Cargo.toml.bak || true
+
+      - name: Commit version changes
+        run: |
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          git add package.json package-lock.json src-tauri/Cargo.toml
+          git commit -m "chore: bump version to v${{ github.event.inputs.version }}" || exit 0
+          git push
+
+      - name: Create and push tag
+        run: |
+          git tag -a "v${{ github.event.inputs.version }}" -m "Release v${{ github.event.inputs.version }}"
+          git push origin "v${{ github.event.inputs.version }}"
+
+  build-and-release:
+    needs: update-version
+    permissions:
+      contents: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: 'macos-latest'
+            args: '--target universal-apple-darwin'
+          - platform: 'ubuntu-22.04'
+            args: ''
+          - platform: 'windows-latest'
+            args: ''
+
+    runs-on: ${{ matrix.platform }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          ref: "v${{ github.event.inputs.version }}"
+
+      - name: Install dependencies (ubuntu only)
+        if: matrix.platform == 'ubuntu-22.04'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.0-dev libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
+
+      - name: Rust setup
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
+
+      - name: Rust cache
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: './src-tauri -> target'
+
+      - name: Sync node version and setup cache
+        uses: actions/setup-node@v4
+        with:
+          node-version: 'lts/*'
+          cache: 'npm'
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: Build the app
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tagName: "v${{ github.event.inputs.version }}"
+          releaseName: "Family Ledger v${{ github.event.inputs.version }}"
+          releaseBody: |
+            Release of Family Ledger v${{ github.event.inputs.version }}
+
+            ## Downloads
+
+            - **Windows**: Download the `.msi` installer
+            - **macOS**: Download the `.dmg` file (Universal binary supports both Intel and Apple Silicon)
+            - **Linux**: Download the `.AppImage` or `.deb` file
+
+            ## Installation Notes
+
+            ### macOS
+            You may need to allow the app in System Preferences > Security & Privacy if you get a security warning.
+
+            ### Windows
+            Windows Defender might show a warning. Click "More info" and then "Run anyway" to install.
+
+            ### Linux
+            For AppImage: Make executable with `chmod +x` and run directly.
+            For .deb: Install with `sudo dpkg -i family-ledger_${{ github.event.inputs.version }}_amd64.deb`
+          releaseDraft: false
+          prerelease: ${{ github.event.inputs.prerelease }}
+          args: ${{ matrix.args }}

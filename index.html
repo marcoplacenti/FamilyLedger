@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Family Ledger</title>
+  </head>
+  <body>
+    <div id="app">
+      <!-- Top Navigation Bar -->
+      <nav class="top-nav">
+        <div class="nav-container">
+          <h1 class="nav-title">Family Ledger</h1>
+          <div class="nav-buttons">
+            <button class="nav-btn active" data-page="dashboard">Dashboard</button>
+            <button class="nav-btn" data-page="transactions">Transactions</button>
+            <button class="nav-btn" data-page="categories">Categories</button>
+            <button class="nav-btn" data-page="reports">Reports</button>
+          </div>
+        </div>
+      </nav>
+
+      <div class="container">
+        <main>
+          <div id="dashboard" class="page active">
+            <div class="summary-cards">
+              <div class="card">
+                <h3>Total Balance</h3>
+                <p class="amount">$0.00</p>
+              </div>
+              <div class="card">
+                <h3>Monthly Income</h3>
+                <p class="amount">$0.00</p>
+              </div>
+              <div class="card">
+                <h3>Monthly Expenses</h3>
+                <p class="amount">$0.00</p>
+              </div>
+            </div>
+          </div>
+
+          <div id="transactions" class="page">
+            <!-- New Transaction Form -->
+            <div class="transaction-form-container">
+              <div class="form-actions">
+                <button id="add-row" class="action-btn add-btn">+ Add Row</button>
+                <button id="remove-row" class="action-btn remove-btn">- Remove Row</button>
+                <button id="submit-transactions" class="submit-btn">Submit All</button>
+              </div>
+              
+              <div class="transaction-form-table">
+                <div class="form-header">
+                  <div>Month</div>
+                  <div>Description</div>
+                  <div>Amount</div>
+                  <div>Category</div>
+                  <div>Account</div>
+                  <div>Type</div>
+                </div>
+                <div id="transaction-form-rows">
+                  <!-- Rows will be dynamically added here -->
+                </div>
+              </div>
+            </div>
+
+            <!-- Recent Transactions Table -->
+            <div class="recent-transactions">
+              <h3>Recent Transactions (Last 20)</h3>
+              <div class="transactions-table-container">
+                <div class="transactions-table-header">
+                  <div>Month</div>
+                  <div>Description</div>
+                  <div>Amount</div>
+                  <div>Category</div>
+                  <div>Account</div>
+                  <div>Type</div>
+                  <div>Date</div>
+                </div>
+                <div id="transactions-table-body">
+                  <!-- Recent transactions will be displayed here -->
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div id="categories" class="page">
+            <div class="page-content">
+              <h2>Categories</h2>
+              <p>Category management coming soon...</p>
+            </div>
+          </div>
+
+          <div id="reports" class="page">
+            <div class="page-content">
+              <h2>Reports</h2>
+              <p>Financial reports coming soon...</p>
+            </div>
+          </div>
+        </main>
+      </div>
+    </div>
+
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
