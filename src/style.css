@@ -292,27 +292,75 @@
   border-bottom: none;
 }
 
-.form-row input,
-.form-row select {
-  padding: 0.5rem 0.75rem;
-  border: 2px solid #e2e8f0;
-  border-radius: 8px;
+.form-row input {
+  padding: 0.875rem 1rem;
+  border: 2px solid #f1f5f9;
+  border-radius: 12px;
   font-size: 0.875rem;
   background: #ffffff;
   color: var(--gray-800);
-  transition: all 0.2s ease;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
 }
 
-.form-row input:focus,
-.form-row select:focus {
+.form-row input:focus {
   outline: none;
   border-color: var(--primary-500);
-  box-shadow: 0 0 0 3px rgba(14, 165, 233, 0.1);
+  box-shadow: 0 0 0 3px rgba(14, 165, 233, 0.1), 0 4px 12px rgba(0, 0, 0, 0.1);
+  transform: translateY(-1px);
 }
 
 .form-row input::placeholder {
-  color: var(--gray-500);
+  color: var(--gray-400);
+  font-weight: 400;
 }
+
+/* Modern Custom Select Styling */
+.form-row select {
+  padding: 0.875rem 1rem;
+  border: 2px solid #f1f5f9;
+  border-radius: 12px;
+  font-size: 0.875rem;
+  background: #ffffff;
+  color: var(--gray-800);
+  cursor: pointer;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+  appearance: none;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+}
+
+.form-row select:hover {
+  border-color: #e2e8f0;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+  transform: translateY(-1px);
+}
+
+.form-row select:focus {
+  outline: none;
+  border-color: var(--primary-500);
+  box-shadow: 0 0 0 3px rgba(14, 165, 233, 0.1), 0 4px 12px rgba(0, 0, 0, 0.1);
+  transform: translateY(-1px);
+}
+
+/* Style select options */
+.form-row select option {
+  padding: 0.75rem 1rem;
+  background: #ffffff;
+  color: var(--gray-800);
+  border: none;
+}
+
+.form-row select option:hover {
+  background: var(--primary-50);
+}
+
+.form-row select option:checked {
+  background: var(--primary-500);
+  color: white;
+}
+
 
 /* Recent Transactions Table */
 .recent-transactions {
@@ -498,17 +546,37 @@
     color: var(--gray-300);
   }
 
-  .form-row input,
-  .form-row select {
-    background: rgba(51, 65, 85, 0.8);
+  .form-row input {
+    background: rgba(51, 65, 85, 0.9);
     color: var(--gray-100);
     border-color: var(--gray-600);
   }
 
-  .form-row input:focus,
+  .form-row input:focus {
+    border-color: var(--primary-400);
+    box-shadow: 0 0 0 3px rgba(14, 165, 233, 0.2), 0 4px 12px rgba(0, 0, 0, 0.2);
+  }
+
+  .form-row select {
+    background: rgba(51, 65, 85, 0.9);
+    color: var(--gray-100);
+    border-color: var(--gray-600);
+  }
+
+  .form-row select:hover {
+    border-color: var(--gray-500);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  }
+
   .form-row select:focus {
     border-color: var(--primary-400);
-    box-shadow: 0 0 0 2px rgba(14, 165, 233, 0.2);
+    box-shadow: 0 0 0 3px rgba(14, 165, 233, 0.2), 0 4px 12px rgba(0, 0, 0, 0.2);
+  }
+
+
+  .form-row select option {
+    background: var(--gray-800);
+    color: var(--gray-100);
   }
 
   .transaction-row {
@@ -587,7 +655,11 @@
   .form-row input,
   .form-row select {
     width: 100%;
+    padding: 1rem;
+    font-size: 1rem;
+    border-radius: 12px;
   }
+
 
   .transactions-table-header,
   .transaction-row {
