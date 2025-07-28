@@ -16,6 +16,24 @@
       "shell": {
         "all": false,
         "open": true
+      },
+      "dialog": {
+        "all": false,
+        "open": true,
+        "save": true,
+        "message": true
+      },
+      "fs": {
+        "all": false,
+        "readFile": true,
+        "writeFile": true,
+        "readDir": true,
+        "createDir": true,
+        "exists": true,
+        "scope": ["**", "$HOME/.familyledger", "$HOME/.familyledger/**", "$DOCUMENT/**"]
+      },
+      "path": {
+        "all": true
       }
     },
     "bundle": {

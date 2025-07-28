@@ -8,15 +8,91 @@
   </head>
   <body>
     <div id="app">
+      <!-- Data Location Selection Modal -->
+      <div id="data-location-modal" class="modal-overlay" style="display: none;">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h2>Welcome to Family Ledger</h2>
+            <p>Please select where you want to store your financial data</p>
+          </div>
+          
+          <div class="modal-body">
+            <div class="location-selection">
+              <div class="storage-type-selection">
+                <label>Choose Storage Type:</label>
+                <div class="storage-options">
+                  <div class="storage-option active" data-type="local">
+                    <div class="option-icon">💻</div>
+                    <div class="option-content">
+                      <h4>Local Storage</h4>
+                      <p>Store data on your computer</p>
+                    </div>
+                  </div>
+                  <div class="storage-option" data-type="googledrive">
+                    <div class="option-icon">☁️</div>
+                    <div class="option-content">
+                      <h4>Google Drive</h4>
+                      <p>Store and share data via Google Drive</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div class="selected-path">
+                <label id="selected-path-label">Selected Location:</label>
+                <input type="text" id="selected-path" readonly placeholder="No location selected..." />
+              </div>
+              
+              <div id="local-actions" class="location-actions">
+                <button id="browse-location-btn" class="action-btn browse-btn">📁 Browse Folder</button>
+                <button id="use-default-btn" class="action-btn default-btn">🏠 Use Default Location</button>
+              </div>
+
+              <div id="googledrive-actions" class="location-actions" style="display: none;">
+                <button id="auth-googledrive-btn" class="action-btn gdrive-btn">🔐 Connect to Google Drive</button>
+                <button id="select-gdrive-folder-btn" class="action-btn browse-btn" style="display: none;">📁 Select Drive Folder</button>
+              </div>
+              
+              <div class="location-info">
+                <p id="location-info-text"><strong>Note:</strong> This will create a folder called "FamilyLedger" in your selected location to store your data files.</p>
+              </div>
+              
+              <div id="sync-status" class="sync-status" style="display: none;">
+                <div class="sync-indicator">
+                  <span class="sync-icon">🔄</span>
+                  <span class="sync-text">Ready to sync</span>
+                </div>
+              </div>
+            </div>
+          </div>
+          
+          <div class="modal-footer">
+            <button id="confirm-location-btn" class="action-btn save-btn" disabled>Continue</button>
+          </div>
+        </div>
+      </div>
+
       <!-- Top Navigation Bar -->
       <nav class="top-nav">
         <div class="nav-container">
           <h1 class="nav-title">Family Ledger</h1>
-          <div class="nav-buttons">
-            <button class="nav-btn active" data-page="dashboard">Dashboard</button>
-            <button class="nav-btn" data-page="transactions">Transactions</button>
-            <button class="nav-btn" data-page="categories">Categories</button>
-            <button class="nav-btn" data-page="reports">Reports</button>
+          <div class="nav-center">
+            <div class="nav-buttons">
+              <button class="nav-btn active" data-page="dashboard">Dashboard</button>
+              <button class="nav-btn" data-page="budgets">Budgets</button>
+              <button class="nav-btn" data-page="transactions">Transactions</button>
+              <button class="nav-btn" data-page="categories">Categories</button>
+              <button class="nav-btn" data-page="reports">Reports</button>
+            </div>
+          </div>
+          <div class="nav-right">
+            <div id="main-sync-status" class="main-sync-status" style="display: none;">
+              <div class="sync-indicator">
+                <span class="sync-icon">☁️</span>
+                <span class="sync-text">Synced</span>
+              </div>
+              <button id="manual-sync-btn" class="sync-btn" title="Manual Sync">🔄</button>
+            </div>
           </div>
         </div>
       </nav>
@@ -36,6 +112,33 @@
               <div class="card">
                 <h3>Monthly Expenses</h3>
                 <p class="amount">$0.00</p>
+              </div>
+            </div>
+          </div>
+
+          <div id="budgets" class="page">
+            <div class="budget-controls">
+              <div class="month-selector-container">
+                <label for="budget-month-select">Select Month:</label>
+                <select id="budget-month-select" class="month-select">
+                  <option value="">Select a month...</option>
+                </select>
+              </div>
+            </div>
+
+            <div id="budget-overview" class="budget-overview" style="display: none;">
+              <h3>Budget Overview</h3>
+              <div class="budget-table-container">
+                <div class="budget-table-header">
+                  <div>Category</div>
+                  <div>Initial Budget</div>
+                  <div>Distribution</div>
+                  <div>Transactions</div>
+                  <div>Current Balance</div>
+                </div>
+                <div id="budget-table-body">
+                  <!-- Budget rows will be displayed here -->
+                </div>
               </div>
             </div>
           </div>
@@ -76,6 +179,7 @@
                   <div>Account</div>
                   <div>Type</div>
                   <div>Date</div>
+                  <div>Actions</div>
                 </div>
                 <div id="transactions-table-body">
                   <!-- Recent transactions will be displayed here -->
@@ -85,9 +189,29 @@
           </div>
 
           <div id="categories" class="page">
-            <div class="page-content">
-              <h2>Categories</h2>
-              <p>Category management coming soon...</p>
+            <div class="categories-container">
+              <div class="categories-header">
+                <h2>Category Management</h2>
+                <div class="category-actions">
+                  <button id="edit-categories-btn" class="action-btn edit-btn">Edit Categories</button>
+                  <button id="add-category-btn" class="action-btn add-btn" style="display: none;">+ Add Category</button>
+                  <button id="save-categories-btn" class="action-btn save-btn" style="display: none;">Save Changes</button>
+                  <button id="cancel-categories-btn" class="action-btn cancel-btn" style="display: none;">Cancel</button>
+                </div>
+              </div>
+
+              <div class="categories-table-container">
+                <div class="categories-table-header">
+                  <div>Category Name</div>
+                  <div>Available From</div>
+                  <div>Initial Budget</div>
+                  <div>Status</div>
+                  <div>Actions</div>
+                </div>
+                <div id="categories-table-body">
+                  <!-- Categories will be displayed here -->
+                </div>
+              </div>
             </div>
           </div>
 
