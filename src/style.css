@@ -297,10 +297,11 @@
   border: 2px solid #f1f5f9;
   border-radius: 12px;
   font-size: 0.875rem;
-  background: #ffffff;
-  color: var(--gray-800);
+  background: #ffffff !important;
+  color: #1e293b !important;
   transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+  -webkit-text-fill-color: #1e293b !important;
 }
 
 .form-row input:focus {
@@ -321,14 +322,15 @@
   border: 2px solid #f1f5f9;
   border-radius: 12px;
   font-size: 0.875rem;
-  background: #ffffff;
-  color: var(--gray-800);
+  background: #ffffff !important;
+  color: #1e293b !important;
   cursor: pointer;
   transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
   appearance: none;
   -webkit-appearance: none;
   -moz-appearance: none;
+  -webkit-text-fill-color: #1e293b !important;
 }
 
 .form-row select:hover {
@@ -526,10 +528,11 @@
   border: 1px solid var(--gray-300);
   border-radius: 4px;
   font-size: 0.75rem;
-  background: white;
-  color: var(--gray-800);
+  background: #ffffff !important;
+  color: #1e293b !important;
   transition: all 0.2s ease;
   max-width: 100%;
+  -webkit-text-fill-color: #1e293b !important;
 }
 
 .transaction-row.editing input:focus,
@@ -615,8 +618,8 @@
   border: 2px solid #f1f5f9;
   border-radius: 12px;
   font-size: 0.875rem;
-  background: #ffffff;
-  color: var(--gray-800);
+  background: #ffffff !important;
+  color: #1e293b !important;
   cursor: pointer;
   transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
@@ -624,6 +627,7 @@
   -webkit-appearance: none;
   -moz-appearance: none;
   min-width: 200px;
+  -webkit-text-fill-color: #1e293b !important;
 }
 
 .month-select:hover {
@@ -734,12 +738,52 @@
 }
 
 /* Category Management Styling */
-.categories-container {
+/* Settings Styles */
+.settings-container {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 2rem;
+}
+
+.settings-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 2rem;
+  padding-bottom: 1rem;
+  border-bottom: 2px solid var(--gray-200);
+}
+
+.settings-header h2 {
+  font-size: 2rem;
+  font-weight: 600;
+  color: var(--gray-900);
+}
+
+.settings-section {
   background: #ffffff;
   border-radius: 16px;
   box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
   border: 1px solid rgba(0, 0, 0, 0.06);
-  padding: 1.5rem;
+  padding: 2rem;
+  margin-bottom: 2rem;
+}
+
+.settings-section h3 {
+  font-size: 1.5rem;
+  font-weight: 600;
+  color: var(--gray-800);
+  margin-bottom: 1.5rem;
+  padding-bottom: 0.5rem;
+  border-bottom: 1px solid var(--gray-200);
+}
+
+.categories-container {
+  background: transparent;
+  border-radius: 0;
+  box-shadow: none;
+  border: none;
+  padding: 0;
 }
 
 .categories-header {
@@ -801,52 +845,93 @@
   border-bottom: none;
 }
 
-.category-name-input {
+/* General Input Field Visibility Fix */
+input[type="text"],
+input[type="number"],
+input[type="month"],
+input[type="date"],
+input[type="email"],
+input[type="password"],
+select,
+textarea {
+  background: #ffffff !important;
+  color: #1e293b !important;
+  -webkit-text-fill-color: #1e293b !important;
+}
+
+input[type="text"]:disabled,
+input[type="number"]:disabled,
+input[type="month"]:disabled,
+input[type="date"]:disabled,
+input[type="email"]:disabled,
+input[type="password"]:disabled,
+select:disabled,
+textarea:disabled {
+  background: #f1f5f9 !important;
+  color: #64748b !important;
+  -webkit-text-fill-color: #64748b !important;
+}
+
+/* Category Input Fields - Enhanced visibility and contrast */
+.category-row .category-name-input,
+input.category-name-input {
   width: 100%;
   padding: 0.5rem;
   border: 1px solid var(--gray-300);
   border-radius: 6px;
   font-size: 0.875rem;
-  background: white;
-  color: var(--gray-800);
+  background: #ffffff !important;
+  color: #1e293b !important;
   transition: all 0.2s ease;
+  -webkit-text-fill-color: #1e293b !important;
 }
 
-.category-name-input:disabled {
-  background: var(--gray-100);
-  color: var(--gray-500);
+.category-row .category-name-input:disabled,
+input.category-name-input:disabled {
+  background: #f1f5f9 !important;
+  color: #64748b !important;
+  -webkit-text-fill-color: #64748b !important;
   border-color: var(--gray-200);
   cursor: not-allowed;
 }
 
-.category-name-input:focus:not(:disabled) {
+.category-row .category-name-input:focus:not(:disabled),
+input.category-name-input:focus:not(:disabled) {
   outline: none;
   border-color: var(--primary-500);
   box-shadow: 0 0 0 2px rgba(14, 165, 233, 0.1);
 }
 
-.category-available-from-input,
-.category-budget-input {
+.category-row .category-available-from-input,
+.category-row .category-budget-input,
+input.category-available-from-input,
+input.category-budget-input {
   width: 100%;
   padding: 0.5rem;
   border: 1px solid var(--gray-300);
   border-radius: 6px;
   font-size: 0.875rem;
-  background: white;
-  color: var(--gray-800);
+  background: #ffffff !important;
+  color: #1e293b !important;
   transition: all 0.2s ease;
+  -webkit-text-fill-color: #1e293b !important;
 }
 
-.category-available-from-input:disabled,
-.category-budget-input:disabled {
-  background: var(--gray-100);
-  color: var(--gray-500);
+.category-row .category-available-from-input:disabled,
+.category-row .category-budget-input:disabled,
+input.category-available-from-input:disabled,
+input.category-budget-input:disabled {
+  background: #f1f5f9 !important;
+  color: #64748b !important;
+  -webkit-text-fill-color: #64748b !important;
   border-color: var(--gray-200);
   cursor: not-allowed;
 }
 
-.category-available-from-input:focus:not(:disabled),
-.category-budget-input:focus:not(:disabled) {
+.category-row .category-available-from-input:focus:not(:disabled),
+.category-row .category-budget-input:focus:not(:disabled),
+input.category-available-from-input:focus:not(:disabled),
+input.category-budget-input:focus:not(:disabled) {
   outline: none;
   border-color: var(--primary-500);
   box-shadow: 0 0 0 2px rgba(14, 165, 233, 0.1);
@@ -1013,9 +1098,10 @@ input:disabled + .toggle-slider:before {
   border: 2px solid var(--gray-200);
   border-radius: 12px;
   font-size: 0.875rem;
-  background: var(--gray-50);
-  color: var(--gray-700);
+  background: #f8fafc !important;
+  color: #334155 !important;
   cursor: default;
+  -webkit-text-fill-color: #334155 !important;
 }
 
 .location-actions {
@@ -1251,6 +1337,24 @@ input:disabled + .toggle-slider:before {
   color: var(--gray-700);
 }
 
+.settings-btn {
+  background: none;
+  border: none;
+  font-size: 1.1rem;
+  padding: 0.5rem;
+  cursor: pointer;
+  border-radius: 6px;
+  transition: all 0.2s ease;
+  color: var(--gray-500);
+  margin-left: 0.5rem;
+}
+
+.settings-btn:hover {
+  background: var(--gray-100);
+  color: var(--gray-700);
+  transform: rotate(90deg);
+}
+
 
 @media (prefers-color-scheme: dark) {
   :root {
@@ -1316,9 +1420,10 @@ input:disabled + .toggle-slider:before {
   }
 
   .form-row input {
-    background: rgba(51, 65, 85, 0.9);
-    color: var(--gray-100);
+    background: rgba(51, 65, 85, 0.9) !important;
+    color: var(--gray-100) !important;
     border-color: var(--gray-600);
+    -webkit-text-fill-color: var(--gray-100) !important;
   }
 
   .form-row input:focus {
@@ -1327,9 +1432,10 @@ input:disabled + .toggle-slider:before {
   }
 
   .form-row select {
-    background: rgba(51, 65, 85, 0.9);
-    color: var(--gray-100);
+    background: rgba(51, 65, 85, 0.9) !important;
+    color: var(--gray-100) !important;
     border-color: var(--gray-600);
+    -webkit-text-fill-color: var(--gray-100) !important;
   }
 
   .form-row select:hover {
@@ -1604,4 +1710,23 @@ input:disabled + .toggle-slider:before {
   .main-sync-status {
     font-size: 0.7rem;
   }
+}
+
+/* Google Drive Picker z-index fix */
+.picker-dialog {
+  z-index: 999999 !important;
+}
+
+.picker-dialog-bg {
+  z-index: 999998 !important;
+}
+
+/* Alternative approach - ensure Google components have highest z-index */
+div[role="dialog"][aria-label*="picker"], 
+div[role="dialog"][aria-label*="Google"], 
+.picker, 
+.goog-dialog, 
+.goog-dialog-bg,
+.picker-main {
+  z-index: 999999 !important;
 }

@@ -13,15 +13,30 @@
 // Built with: TypeScript, Tauri, HTML/CSS, Google Drive API
 // ============================================================================
 
-// TAURI API IMPORTS
+// GOOGLE API DECLARATIONS
+// Declare Google API globals to avoid TypeScript errors
+declare const gapi: any
+declare const google: any
+
+
+// TAURI API IMPORTS  
 // These provide access to native desktop functionality through Tauri's secure API
-import { invoke } from '@tauri-apps/api/tauri'              // For custom Rust commands (unused currently)
 import { open } from '@tauri-apps/api/dialog'              // File/folder picker dialogs
 import { homeDir, join } from '@tauri-apps/api/path'       // Cross-platform path operations
-import { exists, createDir, writeTextFile, readTextFile } from '@tauri-apps/api/fs'  // File system operations
+import { exists, createDir, writeTextFile, readTextFile, removeFile } from '@tauri-apps/api/fs'  // File system operations
 
 // STYLING
 import './style.css'  // Main application styles
+
+// DATABASE IMPORTS
+import { 
+  initializeDatabase,
+  getAllCategories, 
+  insertCategory, 
+  updateCategory, 
+  deleteCategory,
+  getActiveCategories
+} from './database/index';
 
 // ============================================================================
 // DATA STRUCTURES & INTERFACES
@@ -315,7 +330,7 @@ async function submitAllTransactions() {
   }, 100)
   
   try {
-    await saveTransactionsToFile()
+    await saveAllDataToFile()
     
     // Show success message
     showSuccessMessage(`Successfully added ${newTransactions.length} transaction(s)`)
@@ -351,8 +366,12 @@ function highlightNewTransactions(count: number) {
 }
 
 function showSuccessMessage(message: string) {
-  // Create a temporary success notification
-  const notification = document.createElement('div')
+  try {
+    console.log('=== SHOWING SUCCESS MESSAGE ===')
+    console.log('Message:', message)
+    
+    // Create a temporary success notification
+    const notification = document.createElement('div')
   notification.style.cssText = `
     position: fixed;
     top: 100px;
@@ -385,70 +404,265 @@ function showSuccessMessage(message: string) {
       }
     }, 300)
   }, 3000)
+  
+  console.log('✓ Success message created and animated')
+  } catch (error) {
+    console.error('Error showing success message:', error)
+  }
 }
 
 
-async function saveTransactionsToFile() {
-  const content = JSON.stringify(transactions, null, 2)
-  
-  if (storageType === 'googledrive') {
-    // Save to Google Drive and local cache
-    try {
-      await saveToGoogleDrive('transactions.json', content)
-      
-      // Also save to local cache if we have a path
+async function saveCategoriesFile(): Promise<boolean> {
+  try {
+    console.log('=== SAVE CATEGORIES TO FILE START ===')
+    console.log('Storage type:', storageType)
+    
+    // Get categories from database
+    const categoriesResult = await getAllCategories()
+    if (!categoriesResult.success) {
+      console.error('Failed to get categories from database:', categoriesResult.error)
+      return false
+    }
+    
+    const categories = categoriesResult.data || []
+    console.log('Category count:', categories.length)
+    
+    const content = JSON.stringify(categories, null, 2)
+    console.log('Categories content length:', content.length)
+    
+    if (storageType === 'googledrive') {
+      console.log('Saving categories to Google Drive...')
+      try {
+        const success = await saveToGoogleDrive('categories.json', content)
+        console.log('Google Drive categories save result:', success)
+        
+        if (success) {
+          // Also save to local cache if we have a path
+          if (dataStoragePath) {
+            console.log('Saving categories to local cache...')
+            const cacheFile = await join(dataStoragePath, 'categories.json')
+            await writeTextFile(cacheFile, content)
+            console.log('Local categories cache saved successfully')
+          }
+          return true
+        } else {
+          console.error('Google Drive categories save failed')
+          return false
+        }
+      } catch (error) {
+        console.error('Google Drive categories save error:', error)
+        return false
+      }
+    } else {
+      // Local storage
       if (dataStoragePath) {
-        const cacheFile = await join(dataStoragePath, 'transactions.json')
-        await writeTextFile(cacheFile, content)
-      }
-    } catch (error) {
-      // If Google Drive fails, try to save locally if possible
-      if (dataStoragePath && isOnline === false) {
-        const cacheFile = await join(dataStoragePath, 'transactions.json')
-        await writeTextFile(cacheFile, content)
-        updateSyncStatus('error', 'Saved locally - sync pending')
+        const filePath = await join(dataStoragePath, 'categories.json')
+        await writeTextFile(filePath, content)
+        console.log('Categories saved to local file successfully')
+        return true
       } else {
-        throw error
+        console.error('No storage path available for categories')
+        return false
       }
     }
-  } else {
-    // Local storage
-    if (!dataStoragePath) {
-      throw new Error('No data storage path set')
-    }
+  } catch (error) {
+    console.error('Error in saveCategoriesFile:', error)
+    return false
+  }
+}
 
-    try {
-      const transactionsFile = await join(dataStoragePath, 'transactions.json')
-      await writeTextFile(transactionsFile, content)
-    } catch (error) {
-      console.error('Failed to save transactions to file:', error)
-      throw error
+async function saveTransactionsToFile(): Promise<boolean> {
+  try {
+    console.log('=== SAVE TRANSACTIONS TO FILE START ===')
+    console.log('Storage type:', storageType)
+    console.log('Transaction count:', transactions.length)
+    
+    // Check if there are any transactions to save
+    if (transactions.length === 0) {
+      console.log('No transactions to save, creating empty array file')
     }
+    
+    const content = JSON.stringify(transactions, null, 2)
+    console.log('Content length:', content.length)
+    console.log('Content preview:', content.substring(0, 200))
+    
+    if (storageType === 'googledrive') {
+      console.log('Saving to Google Drive...')
+      // Save to Google Drive and local cache
+      try {
+        const success = await saveToGoogleDrive('transactions.json', content)
+        console.log('Google Drive save result:', success)
+        
+        if (success) {
+          // Also save to local cache if we have a path
+          if (dataStoragePath) {
+            console.log('Saving to local cache...')
+            const cacheFile = await join(dataStoragePath, 'transactions.json')
+            await writeTextFile(cacheFile, content)
+            console.log('Local cache saved successfully')
+          }
+          return true
+        } else {
+          console.error('Google Drive save failed')
+          return false
+        }
+      } catch (error) {
+        console.error('Google Drive save error:', error)
+        // If Google Drive fails, try to save locally if possible
+        if (dataStoragePath && isOnline === false) {
+          console.log('Falling back to local save (offline)')
+          const cacheFile = await join(dataStoragePath, 'transactions.json')
+          await writeTextFile(cacheFile, content)
+          updateSyncStatus('error', 'Saved locally - sync pending')
+          return true // Local save succeeded
+        } else {
+          console.error('Unable to save to Google Drive or locally')
+          return false
+        }
+      }
+    } else {
+      console.log('Saving to local storage...')
+      // Local storage
+      if (!dataStoragePath) {
+        console.error('No data storage path set')
+        throw new Error('No data storage path set')
+      }
+
+      try {
+        const transactionsFile = await join(dataStoragePath, 'transactions.json')
+        await writeTextFile(transactionsFile, content)
+        console.log('Local save successful')
+        return true
+      } catch (error) {
+        console.error('Failed to save transactions to local file:', error)
+        return false
+      }
+    }
+  } catch (error) {
+    console.error('=== SAVE TRANSACTIONS ERROR ===')
+    console.error('Error details:', error)
+    return false
+  }
+}
+
+async function saveAllDataToFile(): Promise<boolean> {
+  try {
+    console.log('=== SAVE ALL DATA TO FILE START ===')
+    
+    // Save both transactions and categories
+    const transactionsSuccess = await saveTransactionsToFile()
+    const categoriesSuccess = await saveCategoriesFile()
+    
+    if (transactionsSuccess && categoriesSuccess) {
+      console.log('✓ All data saved successfully')
+      return true
+    } else {
+      console.error('❌ Some data failed to save:', {
+        transactions: transactionsSuccess,
+        categories: categoriesSuccess
+      })
+      return false
+    }
+  } catch (error) {
+    console.error('Error saving all data:', error)
+    return false
   }
 }
 
 async function loadTransactions() {
   try {
+    console.log('=== LOADING TRANSACTIONS ===')
+    console.log('Storage type:', storageType)
+    
+    // Initialize database first
+    console.log('Initializing database...')
+    await initializeDatabase(dataStoragePath || undefined)
+    console.log('Database initialized successfully')
     let loadedTransactions: Transaction[] = []
     
     if (storageType === 'googledrive') {
+      console.log('Loading from Google Drive...')
+      console.log('Google Drive folder ID:', googleDriveFolderId)
+      console.log('Google Drive auth available:', !!googleDriveAuth)
+      
       // Try to load from Google Drive first
       try {
+        console.log('Calling loadFromGoogleDrive for transactions...')
         const driveContent = await loadFromGoogleDrive('transactions.json')
+        console.log('loadFromGoogleDrive result:', driveContent ? 'content received' : 'no content')
         if (driveContent) {
           loadedTransactions = JSON.parse(driveContent)
+          console.log('Parsed transactions from Google Drive:', loadedTransactions.length, 'items')
+        }
+        
+        // Also try to load categories from Google Drive
+        console.log('Calling loadFromGoogleDrive for categories...')
+        const categoriesContent = await loadFromGoogleDrive('categories.json')
+        console.log('Categories loadFromGoogleDrive result:', categoriesContent ? 'content received' : 'no content')
+        if (categoriesContent) {
+          try {
+            const driveCategories = JSON.parse(categoriesContent)
+            console.log('Parsed categories from Google Drive:', driveCategories.length, 'items')
+            
+            // Update local database with Google Drive categories
+            for (const category of driveCategories) {
+              try {
+                if (category.id) {
+                  // Try to update existing category first
+                  const updateResult = await updateCategory(category.id, {
+                    name: category.name,
+                    available_from: category.available_from,
+                    initial_budget: category.initial_budget,
+                    status: category.status
+                  })
+                  
+                  if (!updateResult.success) {
+                    // If update fails, try to insert as new
+                    await insertCategory({
+                      name: category.name,
+                      available_from: category.available_from,
+                      initial_budget: category.initial_budget,
+                      status: category.status
+                    })
+                  }
+                } else {
+                  // Insert new category
+                  await insertCategory({
+                    name: category.name,
+                    available_from: category.available_from,
+                    initial_budget: category.initial_budget,
+                    status: category.status
+                  })
+                }
+              } catch (categoryError) {
+                console.error('Error syncing category:', category.name, categoryError)
+              }
+            }
+            console.log('Categories synced from Google Drive to local database')
+          } catch (categoriesParseError) {
+            console.error('Error parsing categories from Google Drive:', categoriesParseError)
+          }
         }
       } catch (error) {
-        console.error('Failed to load from Google Drive, trying local cache:', error)
+        console.error('=== GOOGLE DRIVE LOAD ERROR ===')
+        console.error('Error details:', error)
+        console.error('Error type:', typeof error)
+        console.error('Error message:', (error as Error)?.message)
         
         // Fall back to local cache
         if (dataStoragePath) {
+          console.log('Falling back to local cache...')
           const cacheFile = await join(dataStoragePath, 'transactions.json')
           if (await exists(cacheFile)) {
             const fileContent = await readTextFile(cacheFile)
             loadedTransactions = JSON.parse(fileContent)
             updateSyncStatus('error', 'Loaded from cache - sync pending')
+            console.log('Loaded from local cache:', loadedTransactions.length, 'items')
+          } else {
+            console.log('No local cache file found')
           }
+        } else {
+          console.log('No data storage path available for cache')
         }
       }
     } else {
@@ -486,6 +700,21 @@ function setupEventListeners() {
       if (pageId) showPage(pageId)
     })
   })
+
+  // Settings navigation
+  const settingsBtn = document.getElementById('settings-btn')
+  if (settingsBtn) {
+    settingsBtn.addEventListener('click', () => showPage('settings'))
+  } else {
+    console.error('Settings button not found during event listener setup!')
+  }
+
+  const backFromSettingsBtn = document.getElementById('back-from-settings-btn')
+  if (backFromSettingsBtn) {
+    backFromSettingsBtn.addEventListener('click', () => showPage('dashboard'))
+  } else {
+    console.error('Back from settings button not found during event listener setup!')
+  }
 
   // Transaction form
   const addRowBtn = document.getElementById('add-row')
@@ -582,7 +811,19 @@ function setupEventListeners() {
 
   const selectGDriveFolderBtn = document.getElementById('select-gdrive-folder-btn')
   if (selectGDriveFolderBtn) {
-    selectGDriveFolderBtn.addEventListener('click', handleGoogleDriveFolderSelection)
+    console.log('=== ATTACHING EVENT LISTENER TO SELECT DRIVE FOLDER BUTTON ===')
+    selectGDriveFolderBtn.addEventListener('click', async (e) => {
+      console.log('=== SELECT DRIVE FOLDER BUTTON CLICKED ===')
+      e.preventDefault()
+      e.stopPropagation()
+      try {
+        await handleGoogleDriveFolderSelection()
+      } catch (error) {
+        console.error('Error in handleGoogleDriveFolderSelection:', error)
+      }
+    })
+  } else {
+    console.error('Select Google Drive folder button not found during event listener setup!')
   }
 
   // Manual sync button
@@ -590,7 +831,99 @@ function setupEventListeners() {
   if (manualSyncBtn) {
     manualSyncBtn.addEventListener('click', async () => {
       if (storageType === 'googledrive') {
-        await saveTransactionsToFile()
+        console.log('=== MANUAL SYNC REQUESTED ===')
+        
+        // Prevent multiple concurrent syncs
+        if ((manualSyncBtn as HTMLButtonElement).disabled) {
+          console.log('Sync already in progress, ignoring request')
+          return
+        }
+        
+        // Disable button during sync
+        (manualSyncBtn as HTMLButtonElement).disabled = true
+        const originalText = manualSyncBtn.textContent
+        manualSyncBtn.textContent = 'Syncing...'
+        
+        updateSyncStatus('syncing', 'Syncing...')
+        
+        try {
+          console.log('=== MANUAL SYNC: Starting validation checks ===')
+          
+          // Check if we have the folder ID
+          if (!googleDriveFolderId) {
+            console.error('No Google Drive folder ID available')
+            updateSyncStatus('error', 'Setup incomplete - please reconfigure')
+            return
+          }
+          console.log('✓ Google Drive folder ID validated:', googleDriveFolderId)
+          
+          // Ensure we're authenticated before syncing
+          if (!googleDriveAuth) {
+            console.log('Not authenticated, authenticating first...')
+            updateSyncStatus('connecting', 'Authenticating...')
+            const authenticated = await authenticateGoogleDrive()
+            if (!authenticated) {
+              console.error('Authentication failed during manual sync')
+              updateSyncStatus('error', 'Authentication failed')
+              return
+            }
+            console.log('Authentication successful')
+          }
+          console.log('✓ Google Drive authentication validated')
+          
+          console.log('=== MANUAL SYNC: Starting transaction save ===')
+          console.log('About to call saveAllDataToFile()...')
+          
+          // Add a small delay to ensure all async operations are settled
+          await new Promise(resolve => setTimeout(resolve, 100))
+          
+          const success = await saveAllDataToFile()
+          
+          console.log('=== MANUAL SYNC: Transaction save completed ===')
+          console.log('Save result:', success)
+          
+          // Add another small delay before UI updates
+          await new Promise(resolve => setTimeout(resolve, 100))
+          
+          if (success) {
+            console.log('✓ Manual sync completed successfully')
+            updateSyncStatus('synced', 'Synced successfully')
+            
+            // Add delay before showing success message to prevent any timing issues
+            setTimeout(() => {
+              try {
+                showSuccessMessage('Sync completed successfully!')
+                console.log('✓ Success message displayed')
+              } catch (msgError) {
+                console.error('Error showing success message:', msgError)
+              }
+            }, 200)
+          } else {
+            console.error('✗ Manual sync failed - saveTransactionsToFile returned false')
+            updateSyncStatus('error', 'Sync failed')
+          }
+          
+          console.log('=== MANUAL SYNC: Process completed, should NOT restart ===')
+        } catch (error) {
+          console.error('=== MANUAL SYNC ERROR ===')
+          console.error('Error details:', error)
+          console.error('Error type:', typeof error)
+          console.error('Error message:', (error as Error)?.message)
+          console.error('Error stack:', (error as Error)?.stack)
+          
+          updateSyncStatus('error', 'Sync failed')
+          
+          // Show user-friendly error message
+          const errorMessage = (error as Error)?.message || 'Unknown error occurred'
+          alert(`Sync failed: ${errorMessage}\n\nPlease check your internet connection and try again.`)
+        } finally {
+          // Re-enable button
+          console.log('=== MANUAL SYNC: Cleaning up ===')
+          (manualSyncBtn as HTMLButtonElement).disabled = false
+          manualSyncBtn.textContent = originalText
+          console.log('✓ Button re-enabled and text restored')
+          console.log('=== MANUAL SYNC: Process fully completed, app should remain open ===')
+        }
       }
     })
   }
@@ -604,50 +937,93 @@ function setupEventListeners() {
  * Main application entry point - executes when DOM is fully loaded
  * Handles first-launch setup, configuration loading, and app initialization
  */
+// Add global error handlers to catch any unhandled errors that might cause app restarts
+window.addEventListener('error', (event) => {
+  console.error('=== GLOBAL ERROR CAUGHT ===')
+  console.error('Error:', event.error)
+  console.error('Message:', event.message)
+  console.error('Filename:', event.filename)
+  console.error('Line:', event.lineno)
+  console.error('Column:', event.colno)
+  // Prevent default behavior that might restart the app
+  event.preventDefault()
+})
+
+window.addEventListener('unhandledrejection', (event) => {
+  console.error('=== UNHANDLED PROMISE REJECTION CAUGHT ===')
+  console.error('Reason:', event.reason)
+  console.error('Promise:', event.promise)
+  // Prevent default behavior that might restart the app
+  event.preventDefault()
+})
+
+// Monitor any navigation attempts that might cause restarts
+window.addEventListener('beforeunload', (event) => {
+  console.error('=== BEFOREUNLOAD EVENT TRIGGERED ===')
+  console.error('The app is trying to unload/restart!')
+  console.error('Stack trace:', new Error().stack)
+  
+  // For debugging - let's see what triggered this
+  event.returnValue = 'Debug: App is trying to restart - check console'
+})
+
 window.addEventListener('DOMContentLoaded', async () => {
-  console.log('DOM Content Loaded - setting up app...')
-  
-  // STEP 1: Setup all event listeners before any UI interactions
-  // This ensures all buttons and inputs are functional immediately
-  setupEventListeners()
-  
-  // STEP 2: Determine if this is the first time the app is being launched
-  // First launch = no configuration file exists yet
-  console.log('Checking if this is first launch...')
-  const isFirstLaunch = await checkFirstLaunch()
-  console.log('Is first launch result:', isFirstLaunch)
-  
-  if (isFirstLaunch) {
-    // FIRST LAUNCH: Show data location selection modal
-    // User must choose between local storage or Google Drive
-    console.log('Showing data location modal...')
-    await showDataLocationModal()
-  } else {
-    // SUBSEQUENT LAUNCHES: Load existing configuration and start app
-    console.log('Loading existing configuration...')
-    dataStoragePath = await loadStoragePath()  // Load saved storage path
-    await initializeApp()                      // Load data and start app
+  try {
+    console.log('DOM Content Loaded - setting up app...')
+    
+    // STEP 1: Setup all event listeners before any UI interactions
+    // This ensures all buttons and inputs are functional immediately
+    setupEventListeners()
+    
+    // STEP 2: Determine if this is the first time the app is being launched
+    // First launch = no configuration file exists yet
+    console.log('Checking if this is first launch...')
+    const isFirstLaunch = await checkFirstLaunch()
+    console.log('Is first launch result:', isFirstLaunch)
+    
+    if (isFirstLaunch) {
+      // FIRST LAUNCH: Show data location selection modal
+      // User must choose between local storage or Google Drive
+      console.log('Showing data location modal...')
+      await showDataLocationModal()
+    } else {
+      // SUBSEQUENT LAUNCHES: Load existing configuration and start app
+      console.log('Loading existing configuration...')
+      dataStoragePath = await loadStoragePath()  // Load saved storage path
+      await initializeApp()                      // Load data and start app
+    }
+
+    // STEP 3: Initialize core app components
+    // These run regardless of first launch or not
+    addFormRow()              // Initialize with one empty form row for new transactions
+    await renderCategoriesTable()   // Initialize categories table display
+    updateTransactionFormCategories() // Initialize transaction form categories
+
+    // Online/offline detection
+    window.addEventListener('online', () => {
+      isOnline = true
+      if (storageType === 'googledrive') {
+        updateSyncStatus('connected', 'Back online')
+      }
+    })
+
+    window.addEventListener('offline', () => {
+      isOnline = false
+      if (storageType === 'googledrive') {
+        updateSyncStatus('error', 'Offline - changes cached locally')
+      }
+    })
+    
+    console.log('DOM Content Loaded setup completed successfully')
+  } catch (error) {
+    console.error('=== DOM CONTENT LOADED ERROR ===')
+    console.error('Error details:', error)
+    console.error('Error message:', (error as Error)?.message)
+    console.error('Error stack:', (error as Error)?.stack)
+    
+    // Show error to user but don't restart app
+    alert(`Failed to initialize application: ${(error as Error)?.message || 'Unknown error'}\n\nSome features may not work correctly. Please restart the application.`)
   }
-
-  // STEP 3: Initialize core app components
-  // These run regardless of first launch or not
-  addFormRow()              // Initialize with one empty form row for new transactions
-  renderCategoriesTable()   // Initialize categories table display
-
-  // Online/offline detection
-  window.addEventListener('online', () => {
-    isOnline = true
-    if (storageType === 'googledrive') {
-      updateSyncStatus('connected', 'Back online')
-    }
-  })
-
-  window.addEventListener('offline', () => {
-    isOnline = false
-    if (storageType === 'googledrive') {
-      updateSyncStatus('error', 'Offline - changes cached locally')
-    }
-  })
 
   // Add numeric validation to amount inputs
   document.addEventListener('input', (e) => {
@@ -783,28 +1159,71 @@ async function getConfigPath(): Promise<string> {
 async function loadStoragePath(): Promise<string | null> {
   try {
     const configPath = await getConfigPath()
+    console.log('=== LOADING CONFIG ===')
     console.log('Loading storage path from:', configPath)
     if (await exists(configPath)) {
       console.log('Config file exists, reading content...')
       const configContent = await readTextFile(configPath)
-      console.log('Config content:', configContent)
+      console.log('Raw config content:', configContent)
       const config = JSON.parse(configContent)
+      console.log('Parsed config object:', config)
       
       // Update global variables
       if (config.storageType) {
         storageType = config.storageType
         console.log('Storage type loaded:', storageType)
+      } else {
+        console.log('No storageType in config')
       }
+      
       if (config.googleDriveFolderId) {
         googleDriveFolderId = config.googleDriveFolderId
         console.log('Google Drive folder ID loaded:', googleDriveFolderId)
+      } else {
+        console.log('No googleDriveFolderId in config')
+        console.log('Config keys available:', Object.keys(config))
+        
+        // If we're using Google Drive but don't have a folder ID, we need to fix this
+        if (storageType === 'googledrive') {
+          console.log('Google Drive storage detected but no folder ID found - needs to be re-configured')
+        }
+      }
+      
+      // Load Google Drive auth if available
+      if (config.googleDriveAuth) {
+        const savedAuth = config.googleDriveAuth
+        const tokenAge = Date.now() - (savedAuth.saved_at || 0)
+        const tokenExpiry = (savedAuth.expires_in || 3600) * 1000 // Convert to milliseconds
+        
+        console.log('Found saved Google Drive auth')
+        console.log('Token age (minutes):', Math.round(tokenAge / 60000))
+        console.log('Token expiry (minutes):', Math.round(tokenExpiry / 60000))
+        
+        // Check if token is still valid (with some buffer time)
+        if (tokenAge < (tokenExpiry - 300000)) { // 5 minute buffer
+          googleDriveAuth = {
+            access_token: savedAuth.access_token,
+            expires_in: savedAuth.expires_in
+          }
+          console.log('Restored valid Google Drive auth from config')
+          
+          // Set the token in gapi client if it's already initialized
+          if (typeof gapi !== 'undefined' && gapi.client) {
+            gapi.client.setToken(savedAuth)
+            console.log('Set token in GAPI client')
+          }
+        } else {
+          console.log('Saved Google Drive auth token has expired, will need to re-authenticate')
+        }
+      } else {
+        console.log('No saved Google Drive auth found')
       }
       
       const dataPath = config.dataStoragePath || null
       console.log('Data storage path loaded:', dataPath)
       return dataPath
     } else {
-      console.log('Config file does not exist')
+      console.log('Config file does not exist at path:', configPath)
     }
   } catch (error) {
     console.error('Error loading storage path:', error)
@@ -822,8 +1241,30 @@ async function saveStoragePath(path: string): Promise<void> {
       await createDir(configDir, { recursive: true })
     }
     
-    const config = { dataStoragePath: path, storageType }
+    const config: any = { 
+      dataStoragePath: path, 
+      storageType 
+    }
+    
+    // Save Google Drive folder ID if using Google Drive storage
+    if (storageType === 'googledrive' && googleDriveFolderId) {
+      config.googleDriveFolderId = googleDriveFolderId
+      console.log('Saving Google Drive folder ID to config:', googleDriveFolderId)
+    }
+    
+    // Save Google Drive auth token if available (for persistence)
+    if (storageType === 'googledrive' && googleDriveAuth) {
+      config.googleDriveAuth = {
+        access_token: googleDriveAuth.access_token,
+        expires_in: googleDriveAuth.expires_in,
+        saved_at: Date.now() // Store when token was saved
+      }
+      console.log('Saving Google Drive auth to config')
+    }
+    
+    console.log('Saving config:', config)
     await writeTextFile(configPath, JSON.stringify(config, null, 2))
+    console.log('Config saved successfully')
   } catch (error) {
     console.error('Error saving storage path:', error)
     throw error
@@ -953,12 +1394,126 @@ async function confirmLocation(): Promise<void> {
 }
 
 async function initializeApp(): Promise<void> {
-  // Load existing data if available
-  await loadTransactions()
-  
-  // Show sync status if using Google Drive
-  if (storageType === 'googledrive') {
-    showMainSyncStatus()
+  try {
+    console.log('=== INITIALIZING APP ===')
+    
+    // If using Google Drive, authenticate first before loading data
+    if (storageType === 'googledrive') {
+      console.log('Google Drive storage detected, checking authentication...')
+      showMainSyncStatus()
+      
+      // Check if we have a folder ID - if not, user needs to reconfigure
+      if (!googleDriveFolderId) {
+        console.log('No Google Drive folder ID found - configuration incomplete')
+        updateSyncStatus('error', 'Setup incomplete - please reconfigure Google Drive')
+        
+        // Show a helpful message to the user with two options
+        setTimeout(async () => {
+          const choice = confirm('Your Google Drive setup is incomplete. Choose how to fix this:\n\nOK = Complete the setup (recommended)\nCancel = Reset everything and start over')
+          
+          if (choice) {
+            // Option 1: Just complete the missing setup by selecting the Google Drive folder
+            console.log('User chose to complete setup - selecting Google Drive folder...')
+            updateSyncStatus('connecting', 'Completing Google Drive setup...')
+            
+            try {
+              console.log('Starting Google Drive folder selection...')
+              const folderId = await selectGoogleDriveFolder()
+              console.log('Selected folder ID:', folderId)
+              
+              if (folderId) {
+                // Create FamilyLedger subfolder
+                const familyLedgerFolderId = await createGoogleDriveFolder(DATA_FOLDER_NAME, folderId)
+                console.log('Created FamilyLedger folder ID:', familyLedgerFolderId)
+                
+                if (familyLedgerFolderId) {
+                  googleDriveFolderId = familyLedgerFolderId
+                  console.log('Google Drive folder ID set:', googleDriveFolderId)
+                  
+                  // Save the updated config
+                  await saveStoragePath(dataStoragePath || '')
+                  console.log('Configuration updated successfully')
+                  
+                  updateSyncStatus('connected', 'Google Drive setup completed')
+                  
+                  // Now load the data
+                  await loadTransactions()
+                  showSuccessMessage('Google Drive setup completed successfully!')
+                } else {
+                  throw new Error('Failed to create FamilyLedger folder')
+                }
+              } else {
+                updateSyncStatus('error', 'Setup cancelled - folder not selected')
+              }
+            } catch (error) {
+              console.error('Error completing Google Drive setup:', error)
+              updateSyncStatus('error', 'Setup failed - please try again')
+              alert('Failed to complete Google Drive setup. Please try again or restart the app.')
+            }
+          } else {
+            // Option 2: Full reset (delete config file)
+            try {
+              console.log('User chose full reset - deleting config file...')
+              const configPath = await getConfigPath()
+              console.log('Config path:', configPath)
+              
+              if (await exists(configPath)) {
+                await removeFile(configPath)
+                console.log('Config file deleted successfully')
+              }
+              
+              localStorage.clear()
+              location.reload()
+            } catch (error) {
+              console.error('Error during reset:', error)
+              const configPath = await getConfigPath().catch(() => 'unknown path')
+              alert(`Failed to reset automatically.\n\nManual fix:\n1. Close the app\n2. Delete: ${configPath}\n3. Restart the app`)
+            }
+          }
+        }, 1000)
+        return
+      }
+      
+      // If we already have auth, just check if it's still valid
+      if (googleDriveAuth) {
+        console.log('Using existing Google Drive authentication')
+        updateSyncStatus('connected', 'Connected to Google Drive')
+      } else {
+        console.log('No valid authentication found, authenticating...')
+        updateSyncStatus('connecting', 'Connecting to Google Drive...')
+        
+        try {
+          const authenticated = await authenticateGoogleDrive()
+          if (authenticated) {
+            console.log('Google Drive authentication successful on startup')
+            updateSyncStatus('connected', 'Connected to Google Drive')
+          } else {
+            console.log('Google Drive authentication failed on startup')
+            updateSyncStatus('error', 'Authentication failed')
+            alert('Failed to authenticate with Google Drive. Please try again.')
+            return // Don't try to load data if auth failed
+          }
+        } catch (error) {
+          console.error('Google Drive authentication error on startup:', error)
+          updateSyncStatus('error', 'Connection failed')
+          alert('Failed to connect to Google Drive. Please check your internet connection and try again.')
+          return // Don't try to load data if auth failed
+        }
+      }
+    }
+    
+    // Load existing data if available
+    console.log('Loading transactions...')
+    await loadTransactions()
+    console.log('App initialization completed successfully')
+  } catch (error) {
+    console.error('=== APP INITIALIZATION ERROR ===')
+    console.error('Error details:', error)
+    console.error('Error message:', (error as Error)?.message)
+    console.error('Error stack:', (error as Error)?.stack)
+    
+    // Don't restart the app, just show an error message
+    alert(`Failed to initialize app: ${(error as Error)?.message || 'Unknown error'}\n\nPlease restart the application.`)
   }
 }
 
@@ -1086,13 +1641,24 @@ async function authenticateGoogleDrive(): Promise<boolean> {
         client_id: GOOGLE_CLIENT_ID,
         scope: 'https://www.googleapis.com/auth/drive.file',
         callback: (tokenResponse: any) => {
-          console.log('OAuth token received:', tokenResponse)
+          console.log('=== OAUTH CALLBACK RECEIVED ===')
+          console.log('Token response:', tokenResponse)
+          console.log('Has access_token:', !!tokenResponse?.access_token)
           if (tokenResponse && tokenResponse.access_token) {
             googleDriveAuth = {
               access_token: tokenResponse.access_token,
               expires_in: tokenResponse.expires_in
             }
+            console.log('Setting GAPI client token...')
             gapi.client.setToken(tokenResponse)
+            console.log('GAPI client token set successfully')
+            
+            // Save the auth token to config for persistence
+            console.log('Saving auth token to config for future use...')
+            saveStoragePath(dataStoragePath || '').catch(error => {
+              console.error('Failed to save auth token to config:', error)
+            })
+            
             console.log('User signed in successfully')
             resolve(true)
           } else {
@@ -1122,23 +1688,58 @@ async function selectGoogleDriveFolder(): Promise<string | null> {
       if (!authenticated) return null
     }
 
+    // Ensure gapi is properly initialized before using picker
+    await ensureGapiReady()
+
     return new Promise((resolve) => {
+      // Temporarily hide the modal to avoid z-index conflicts
+      const modal = document.getElementById('data-location-modal')
+      const originalDisplay = modal?.style.display
+      if (modal) {
+        modal.style.display = 'none'
+      }
+      
       const picker = new google.picker.PickerBuilder()
         .addView(new google.picker.DocsView(google.picker.ViewId.FOLDERS)
           .setSelectFolderEnabled(true))
         .setOAuthToken(googleDriveAuth.access_token)
         .setDeveloperKey(GOOGLE_API_KEY)
         .setCallback((data: any) => {
-          if (data.action === google.picker.Action.PICKED) {
-            const folder = data.docs[0]
-            resolve(folder.id)
+          console.log('Picker callback - action:', data.action)
+          
+          // Restore modal visibility after picker closes
+          if (modal && originalDisplay) {
+            modal.style.display = originalDisplay
+          }
+          
+          if (data.action === 'picked' || data.action === google.picker.Action.PICKED) {
+            if (data.docs && data.docs.length > 0) {
+              const folder = data.docs[0]
+              console.log('Selected folder ID:', folder.id)
+              console.log('=== ABOUT TO RESOLVE WITH FOLDER ID ===')
+              resolve(folder.id)
+              console.log('=== RESOLVE CALLED ===')
+            } else {
+              console.log('No docs in picker data')
+              resolve(null)
+            }
+          } else if (data.action === 'cancel' || data.action === google.picker.Action.CANCEL) {
+            console.log('User cancelled picker')
+            resolve(null)
+          } else if (data.action === 'loaded') {
+            console.log('Picker loaded - ignoring this action')
+            // Don't resolve here, wait for picked or cancel
           } else {
+            console.log('Unknown picker action:', data.action)
             resolve(null)
           }
         })
         .build()
       
-      picker.setVisible(true)
+      // Add a small delay to ensure modal is hidden before showing picker
+      setTimeout(() => {
+        picker.setVisible(true)
+      }, 100)
     })
   } catch (error) {
     console.error('Failed to select Google Drive folder:', error)
@@ -1148,6 +1749,9 @@ async function selectGoogleDriveFolder(): Promise<string | null> {
 
 async function createGoogleDriveFolder(name: string, parentId?: string): Promise<string | null> {
   try {
+    // Ensure gapi is properly initialized before using it
+    await ensureGapiReady()
+    
     const response = await gapi.client.drive.files.create({
       resource: {
         name: name,
@@ -1163,55 +1767,126 @@ async function createGoogleDriveFolder(name: string, parentId?: string): Promise
   }
 }
 
+// Helper function to ensure gapi is available and initialized
+async function ensureGapiReady(): Promise<void> {
+  console.log('Checking gapi availability...')
+  
+  if (typeof gapi === 'undefined' || !gapi.client) {
+    console.log('gapi not available or client not initialized, initializing Google Drive...')
+    await initializeGoogleDrive()
+  }
+  
+  // Set the access token if we have one
+  if (googleDriveAuth && googleDriveAuth.access_token) {
+    console.log('Setting access token for API calls...')
+    gapi.client.setToken({ access_token: googleDriveAuth.access_token })
+  } else {
+    console.log('No authentication available, authenticating...')
+    const authenticated = await authenticateGoogleDrive()
+    if (!authenticated) {
+      throw new Error('Failed to authenticate with Google Drive')
+    }
+    // Set the token after authentication
+    if (googleDriveAuth && googleDriveAuth.access_token) {
+      gapi.client.setToken({ access_token: googleDriveAuth.access_token })
+    }
+  }
+  
+  console.log('gapi is ready for use')
+}
+
 async function saveToGoogleDrive(fileName: string, content: string): Promise<boolean> {
   try {
+    console.log('=== SAVE TO GOOGLE DRIVE START ===')
+    console.log('File name:', fileName)
+    console.log('Google Drive folder ID:', googleDriveFolderId)
+    console.log('Content length:', content.length)
+    
     if (!googleDriveFolderId) {
       throw new Error('No Google Drive folder selected')
     }
 
+    // Ensure gapi is properly initialized before using it
+    await ensureGapiReady()
+
     updateSyncStatus('syncing', 'Saving to Google Drive...')
 
     // Check if file exists
+    console.log('Checking if file exists...')
     const existingFile = await findGoogleDriveFile(fileName)
-    
-    const fileMetadata = {
-      name: fileName,
-      parents: [googleDriveFolderId]
-    }
-
-    const media = {
-      mimeType: 'application/json',
-      body: content
-    }
+    console.log('Existing file:', existingFile ? `Found (ID: ${existingFile.id})` : 'Not found')
 
     let response
     if (existingFile) {
-      // Update existing file
+      // Update existing file using the correct multipart upload
+      console.log('Updating existing file...')
+      console.log('Making PATCH request to update existing file...')
       response = await gapi.client.request({
         path: `https://www.googleapis.com/upload/drive/v3/files/${existingFile.id}`,
         method: 'PATCH',
-        params: { uploadType: 'media' },
-        headers: { 'Content-Type': 'application/json' },
+        params: { 
+          uploadType: 'media'
+        },
+        headers: { 
+          'Content-Type': 'application/json'
+        },
         body: content
       })
+      console.log('PATCH request completed successfully')
     } else {
-      // Create new file
+      // Create new file using multipart upload
+      console.log('Creating new file...')
+      
+      const boundary = '-------314159265358979323846'
+      const delimiter = "\r\n--" + boundary + "\r\n"
+      const close_delim = "\r\n--" + boundary + "--"
+
+      const metadata = {
+        name: fileName,
+        parents: [googleDriveFolderId],
+        mimeType: 'application/json'
+      }
+
+      const multipartRequestBody =
+        delimiter +
+        'Content-Type: application/json\r\n\r\n' +
+        JSON.stringify(metadata) +
+        delimiter +
+        'Content-Type: application/json\r\n\r\n' +
+        content +
+        close_delim
+
+      console.log('Making POST request to create new file...')
       response = await gapi.client.request({
         path: 'https://www.googleapis.com/upload/drive/v3/files',
         method: 'POST',
-        params: { uploadType: 'media' },
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          ...fileMetadata,
-          content: btoa(content)
-        })
+        params: {
+          uploadType: 'multipart'
+        },
+        headers: {
+          'Content-Type': 'multipart/related; boundary="' + boundary + '"'
+        },
+        body: multipartRequestBody
       })
+      console.log('POST request completed successfully')
     }
 
-    updateSyncStatus('synced', 'Synced with Google Drive')
-    return response.status === 200
+    console.log('Google Drive API response status:', response.status)
+    console.log('Google Drive API response:', response.result)
+
+    if (response.status === 200) {
+      updateSyncStatus('synced', 'Synced with Google Drive')
+      console.log('File saved successfully to Google Drive')
+      return true
+    } else {
+      console.error('Unexpected response status:', response.status)
+      updateSyncStatus('error', 'Sync failed')
+      return false
+    }
   } catch (error) {
-    console.error('Failed to save to Google Drive:', error)
+    console.error('=== GOOGLE DRIVE SAVE ERROR ===')
+    console.error('Error details:', error)
+    console.error('Error message:', (error as any)?.result?.error?.message)
     updateSyncStatus('error', 'Sync failed')
     return false
   }
@@ -1219,27 +1894,45 @@ async function saveToGoogleDrive(fileName: string, content: string): Promise<boo
 
 async function loadFromGoogleDrive(fileName: string): Promise<string | null> {
   try {
+    console.log('=== LOAD FROM GOOGLE DRIVE START ===')
+    console.log('File name:', fileName)
+    console.log('Google Drive folder ID:', googleDriveFolderId)
+    console.log('Google Drive auth available:', !!googleDriveAuth)
+    
     if (!googleDriveFolderId) {
+      console.error('No Google Drive folder ID available')
       throw new Error('No Google Drive folder selected')
     }
 
+    // Ensure gapi is properly initialized before using it
+    await ensureGapiReady()
+
     updateSyncStatus('syncing', 'Loading from Google Drive...')
 
+    console.log('Searching for file in Google Drive...')
     const file = await findGoogleDriveFile(fileName)
+    console.log('File search result:', file ? `Found file ID: ${file.id}` : 'No file found')
     if (!file) {
+      console.log('No data file found in Google Drive')
       updateSyncStatus('synced', 'No data found')
       return null
     }
 
+    console.log('Downloading file content...')
     const response = await gapi.client.drive.files.get({
       fileId: file.id,
       alt: 'media'
     })
+    console.log('File download response status:', response.status)
+    console.log('File content length:', response.body?.length || 'no body')
 
     updateSyncStatus('synced', 'Loaded from Google Drive')
     return response.body
   } catch (error) {
-    console.error('Failed to load from Google Drive:', error)
+    console.error('=== GOOGLE DRIVE LOAD ERROR ===')
+    console.error('Error details:', error)
+    console.error('Error message:', (error as Error)?.message)
+    console.error('Error stack:', (error as Error)?.stack)
     updateSyncStatus('error', 'Sync failed')
     return null
   }
@@ -1247,6 +1940,8 @@ async function loadFromGoogleDrive(fileName: string): Promise<string | null> {
 
 async function findGoogleDriveFile(fileName: string): Promise<any> {
   try {
+    // Ensure gapi is properly initialized before using it
+    await ensureGapiReady()
     const response = await gapi.client.drive.files.list({
       q: `name='${fileName}' and parents in '${googleDriveFolderId}' and trashed=false`,
       spaces: 'drive'
@@ -1262,7 +1957,7 @@ async function findGoogleDriveFile(fileName: string): Promise<any> {
 }
 
 // UI Helper Functions
-function updateSyncStatus(status: 'syncing' | 'synced' | 'error' | 'connected', message: string) {
+function updateSyncStatus(status: 'syncing' | 'synced' | 'error' | 'connected' | 'connecting', message: string) {
   const syncIcon = document.querySelector('.sync-icon')
   const syncText = document.querySelector('.sync-text')
   const mainSyncIcon = document.querySelector('#main-sync-status .sync-icon')
@@ -1272,7 +1967,8 @@ function updateSyncStatus(status: 'syncing' | 'synced' | 'error' | 'connected', 
     syncing: '🔄',
     synced: '☁️',
     error: '❌',
-    connected: '✅'
+    connected: '✅',
+    connecting: '🔗'
   }
   
   if (syncIcon) syncIcon.textContent = icons[status]
@@ -1406,71 +2102,115 @@ async function handleGoogleDriveAuth() {
 }
 
 async function handleGoogleDriveFolderSelection() {
+  console.log('=== handleGoogleDriveFolderSelection CALLED ===')
   try {
+    console.log('Starting Google Drive folder selection...')
     const folderId = await selectGoogleDriveFolder()
+    console.log('=== RETURNED FROM selectGoogleDriveFolder ===')
+    console.log('Selected folder ID:', folderId)
+    console.log('Type of folderId:', typeof folderId)
+    
     if (folderId) {
+      console.log('Creating FamilyLedger subfolder...')
       // Create FamilyLedger subfolder
       const familyLedgerFolderId = await createGoogleDriveFolder(DATA_FOLDER_NAME, folderId)
+      console.log('Created FamilyLedger folder ID:', familyLedgerFolderId)
+      console.log('Type of familyLedgerFolderId:', typeof familyLedgerFolderId)
       
       if (familyLedgerFolderId) {
         googleDriveFolderId = familyLedgerFolderId
+        console.log('Google Drive folder ID set:', googleDriveFolderId)
         
         const pathInput = document.getElementById('selected-path') as HTMLInputElement
         const confirmBtn = document.getElementById('confirm-location-btn') as HTMLButtonElement
         
+        console.log('Path input element:', pathInput)
+        console.log('Path input current value:', pathInput?.value)
+        console.log('Confirm button element:', confirmBtn)
+        console.log('Confirm button disabled state:', confirmBtn?.disabled)
+        
         if (pathInput) {
+          console.log('Setting path input value...')
           pathInput.value = `Google Drive/${DATA_FOLDER_NAME}`
+          console.log('Updated path input value to:', pathInput.value)
+          console.log('Path input value after update:', pathInput.value)
+        } else {
+          console.error('Path input element not found!')
         }
+        
         if (confirmBtn) {
+          console.log('Enabling confirm button...')
           confirmBtn.disabled = false
+          console.log('Confirm button disabled state after update:', confirmBtn.disabled)
+        } else {
+          console.error('Confirm button element not found!')
         }
         
         updateSyncStatus('connected', 'Google Drive folder selected')
+        console.log('Folder selection completed successfully')
       } else {
+        console.error('Failed to create FamilyLedger folder - familyLedgerFolderId is:', familyLedgerFolderId)
         alert('Failed to create FamilyLedger folder in Google Drive.')
       }
+    } else {
+      console.log('No folder selected by user - folderId is:', folderId)
     }
   } catch (error) {
     console.error('Folder selection error:', error)
+    console.error('Error details:', error)
     alert('Failed to select Google Drive folder. Please try again.')
   }
 }
 
-function renderCategoriesTable() {
+async function renderCategoriesTable() {
   const categoriesTableBodyEl = document.getElementById('categories-table-body')
   if (!categoriesTableBodyEl) return
 
-  if (categories.length === 0) {
-    categoriesTableBodyEl.innerHTML = '<div class="empty-state">No categories created yet. Click "Edit Categories" to get started.</div>'
-    return
-  }
+  try {
+    const result = await getAllCategories()
+    if (!result.success) {
+      console.error('Failed to load categories:', result.error)
+      categoriesTableBodyEl.innerHTML = '<div class="empty-state">Failed to load categories.</div>'
+      return
+    }
 
-  categoriesTableBodyEl.innerHTML = categories.map(category => `
-    <div class="category-row" data-category-id="${category.id}">
-      <div class="category-name">
-        <input type="text" class="category-name-input" value="${category.name}" ${!editingCategories ? 'disabled' : ''} />
+    const categories = result.data || []
+
+    if (categories.length === 0) {
+      categoriesTableBodyEl.innerHTML = '<div class="empty-state">No categories created yet. Click "Edit Categories" to get started.</div>'
+      return
+    }
+
+    categoriesTableBodyEl.innerHTML = categories.map(category => `
+      <div class="category-row" data-category-id="${category.id}">
+        <div class="category-name">
+          <input type="text" class="category-name-input" value="${category.name}" ${!editingCategories ? 'disabled' : ''} />
+        </div>
+        <div class="category-available-from">
+          <input type="month" class="category-available-from-input" value="${category.available_from || ''}" ${!editingCategories ? 'disabled' : ''} />
+        </div>
+        <div class="category-initial-budget">
+          <input type="text" class="category-budget-input" value="${category.initial_budget || 0}" placeholder="0.00" inputmode="decimal" ${!editingCategories ? 'disabled' : ''} />
+        </div>
+        <div class="category-status">
+          <label class="toggle-switch">
+            <input type="checkbox" class="category-toggle" ${category.status === 'active' ? 'checked' : ''} ${!editingCategories ? 'disabled' : ''} />
+            <span class="toggle-slider"></span>
+          </label>
+          <span class="status-text">${category.status === 'active' ? 'Active' : 'Inactive'}</span>
+        </div>
+        <div class="category-actions">
+          ${editingCategories ? `<button class="delete-category-btn" onclick="handleCategoryDelete('${category.id}')">Delete</button>` : ''}
+        </div>
       </div>
-      <div class="category-available-from">
-        <input type="month" class="category-available-from-input" value="${category.availableFrom}" ${!editingCategories ? 'disabled' : ''} />
-      </div>
-      <div class="category-initial-budget">
-        <input type="text" class="category-budget-input" value="${category.initialBudget}" placeholder="0.00" inputmode="decimal" ${!editingCategories ? 'disabled' : ''} />
-      </div>
-      <div class="category-status">
-        <label class="toggle-switch">
-          <input type="checkbox" class="category-toggle" ${category.enabled ? 'checked' : ''} ${!editingCategories ? 'disabled' : ''} />
-          <span class="toggle-slider"></span>
-        </label>
-        <span class="status-text">${category.enabled ? 'Enabled' : 'Disabled'}</span>
-      </div>
-      <div class="category-actions">
-        ${editingCategories ? `<button class="delete-category-btn" onclick="deleteCategory('${category.id}')">Delete</button>` : ''}
-      </div>
-    </div>
-  `).join('')
+    `).join('')
+  } catch (error) {
+    console.error('Error rendering categories table:', error)
+    categoriesTableBodyEl.innerHTML = '<div class="empty-state">Error loading categories.</div>'
+  }
 }
 
-function enterEditMode() {
+async function enterEditMode() {
   editingCategories = true
   
   // Show/hide buttons
@@ -1479,10 +2219,10 @@ function enterEditMode() {
   document.getElementById('save-categories-btn')!.style.display = 'inline-block'
   document.getElementById('cancel-categories-btn')!.style.display = 'inline-block'
   
-  renderCategoriesTable()
+  await renderCategoriesTable()
 }
 
-function exitEditMode() {
+async function exitEditMode() {
   editingCategories = false
   
   // Show/hide buttons
@@ -1491,27 +2231,198 @@ function exitEditMode() {
   document.getElementById('save-categories-btn')!.style.display = 'none'
   document.getElementById('cancel-categories-btn')!.style.display = 'none'
   
-  renderCategoriesTable()
+  await renderCategoriesTable()
 }
 
-function addNewCategory() {
+
+async function deleteCategoryById(categoryId: number) {
+  try {
+    const result = await deleteCategory(categoryId)
+    if (result.success) {
+      console.log('Category deleted successfully')
+      await renderCategoriesTable()
+    } else {
+      console.error('Failed to delete category:', result.error)
+      alert('Failed to delete category: ' + result.error)
+    }
+  } catch (error) {
+    console.error('Error deleting category:', error)
+    alert('Error deleting category. Please try again.')
+  }
+}
+
+async function saveCategories() {
+  try {
+    // Update categories from form inputs
+    const categoryRows = document.querySelectorAll('.category-row')
+    
+    const updatePromises: Promise<any>[] = []
+    const insertPromises: Promise<any>[] = []
+    
+    categoryRows.forEach(row => {
+      const categoryId = row.getAttribute('data-category-id')
+      const nameInput = row.querySelector('.category-name-input') as HTMLInputElement
+      const availableFromInput = row.querySelector('.category-available-from-input') as HTMLInputElement
+      const budgetInput = row.querySelector('.category-budget-input') as HTMLInputElement
+      const toggleInput = row.querySelector('.category-toggle') as HTMLInputElement
+      
+      if (categoryId && nameInput && availableFromInput && budgetInput && toggleInput) {
+        const name = nameInput.value.trim()
+        if (name) {
+          const categoryData = {
+            name,
+            available_from: availableFromInput.value || undefined,
+            initial_budget: parseFloat(budgetInput.value) || 0,
+            status: toggleInput.checked ? 'active' as const : 'inactive' as const
+          }
+          
+          if (categoryId.startsWith('temp-')) {
+            // This is a new category, insert it
+            insertPromises.push(insertCategory(categoryData))
+          } else {
+            // This is an existing category, update it
+            updatePromises.push(updateCategory(parseInt(categoryId), categoryData))
+          }
+        }
+      }
+    })
+    
+    // Wait for all operations to complete
+    const updateResults = await Promise.all(updatePromises)
+    const insertResults = await Promise.all(insertPromises)
+    const allResults = [...updateResults, ...insertResults]
+    const failures = allResults.filter(result => !result.success)
+    
+    if (failures.length > 0) {
+      console.error('Some category operations failed:', failures)
+      alert('Some categories could not be saved. Please try again.')
+      return
+    }
+    
+    exitEditMode()
+    
+    // Sync categories to Google Drive if using cloud storage
+    if (storageType === 'googledrive') {
+      console.log('Syncing categories to Google Drive...')
+      const syncSuccess = await saveCategoriesFile()
+      if (syncSuccess) {
+        showSuccessMessage('Categories saved and synced successfully')
+      } else {
+        showSuccessMessage('Categories saved locally, but sync failed')
+      }
+    } else {
+      showSuccessMessage('Categories saved successfully')
+    }
+    
+    // Update transaction forms with new categories
+    await updateTransactionFormCategories()
+    await renderCategoriesTable()
+  } catch (error) {
+    console.error('Error saving categories:', error)
+    alert('Error saving categories. Please try again.')
+  }
+}
+
+async function cancelCategoryEditing() {
+  // Reload categories to discard changes
+  await exitEditMode()
+}
+
+async function updateTransactionFormCategories() {
+  try {
+    const result = await getActiveCategories()
+    if (!result.success) {
+      console.error('Failed to load active categories:', result.error)
+      return
+    }
+
+    const enabledCategories = result.data || []
+    
+    // Update new transaction form
+    const categorySelects = document.querySelectorAll('.category-input')
+    categorySelects.forEach(select => {
+      const selectEl = select as HTMLSelectElement
+      const currentValue = selectEl.value
+      
+      const categoryOptions = enabledCategories.length > 0 
+        ? enabledCategories.map(cat => 
+            `<option value="${cat.name}" ${cat.name === currentValue ? 'selected' : ''}>${cat.name}</option>`
+          ).join('')
+        : '<option value="" disabled>No categories available - Please create categories first</option>'
+      
+      selectEl.innerHTML = '<option value="">Select Category</option>' + categoryOptions
+    })
+    
+    // Update edit transaction category selects
+    const editCategorySelects = document.querySelectorAll('.edit-category')
+    editCategorySelects.forEach(select => {
+      const selectEl = select as HTMLSelectElement
+      const currentValue = selectEl.value
+    
+      if (enabledCategories.length > 0) {
+        selectEl.innerHTML = enabledCategories.map(cat => 
+          `<option value="${cat.name}" ${cat.name === currentValue ? 'selected' : ''}>${cat.name}</option>`
+        ).join('')
+      } else {
+        selectEl.innerHTML = `<option value="${currentValue}" selected>${currentValue} (Category disabled)</option>`
+      }
+    })
+  } catch (error) {
+    console.error('Error updating transaction form categories:', error)
+  }
+}
+
+async function addNewCategory() {
+  if (!editingCategories) return
+  
   const currentMonth = new Date()
   const monthValue = `${currentMonth.getFullYear()}-${String(currentMonth.getMonth() + 1).padStart(2, '0')}`
   
-  const newCategory: Category = {
-    id: generateCategoryId(),
+  // Create a temporary new category object
+  const tempId = Date.now() // Use timestamp as temporary ID
+  const newCategory = {
+    id: tempId,
     name: 'New Category',
-    enabled: true,
-    availableFrom: monthValue,
-    initialBudget: 0
+    available_from: monthValue,
+    initial_budget: 0,
+    status: 'active' as const,
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString()
   }
   
-  categories.push(newCategory)
-  renderCategoriesTable()
+  // Add new row to the table directly
+  const categoriesTableBodyEl = document.getElementById('categories-table-body')
+  if (!categoriesTableBodyEl) return
+  
+  const newRowHtml = `
+    <div class="category-row" data-category-id="temp-${tempId}">
+      <div class="category-name">
+        <input type="text" class="category-name-input" value="${newCategory.name}" />
+      </div>
+      <div class="category-available-from">
+        <input type="month" class="category-available-from-input" value="${newCategory.available_from}" />
+      </div>
+      <div class="category-initial-budget">
+        <input type="text" class="category-budget-input" value="${newCategory.initial_budget}" placeholder="0.00" inputmode="decimal" />
+      </div>
+      <div class="category-status">
+        <label class="toggle-switch">
+          <input type="checkbox" class="category-toggle" checked />
+          <span class="toggle-slider"></span>
+        </label>
+        <span class="status-text">Active</span>
+      </div>
+      <div class="category-actions">
+        <button class="delete-category-btn" onclick="removeNewCategoryRow('temp-${tempId}')">Delete</button>
+      </div>
+    </div>
+  `
+  
+  categoriesTableBodyEl.insertAdjacentHTML('beforeend', newRowHtml)
   
   // Focus on the new category name input
   setTimeout(() => {
-    const newRow = document.querySelector(`[data-category-id="${newCategory.id}"]`)
+    const newRow = document.querySelector(`[data-category-id="temp-${tempId}"]`)
     const input = newRow?.querySelector('.category-name-input') as HTMLInputElement
     if (input) {
       input.focus()
@@ -1520,80 +2431,34 @@ function addNewCategory() {
   }, 100)
 }
 
-function deleteCategory(categoryId: string) {
-  categories = categories.filter(cat => cat.id !== categoryId)
-  renderCategoriesTable()
+function removeNewCategoryRow(tempId: string) {
+  const row = document.querySelector(`[data-category-id="${tempId}"]`)
+  if (row) {
+    row.remove()
+  }
 }
 
-function saveCategories() {
-  // Update categories from form inputs
-  const categoryRows = document.querySelectorAll('.category-row')
-  
-  categoryRows.forEach(row => {
-    const categoryId = row.getAttribute('data-category-id')
-    const nameInput = row.querySelector('.category-name-input') as HTMLInputElement
-    const availableFromInput = row.querySelector('.category-available-from-input') as HTMLInputElement
-    const budgetInput = row.querySelector('.category-budget-input') as HTMLInputElement
-    const toggleInput = row.querySelector('.category-toggle') as HTMLInputElement
-    
-    if (categoryId && nameInput && availableFromInput && budgetInput && toggleInput) {
-      const category = categories.find(cat => cat.id === categoryId)
-      if (category) {
-        category.name = nameInput.value.trim()
-        category.availableFrom = availableFromInput.value
-        category.initialBudget = parseFloat(budgetInput.value) || 0
-        category.enabled = toggleInput.checked
+async function handleCategoryDelete(categoryId: string) {
+  if (categoryId.startsWith('temp-')) {
+    // This is a new category that hasn't been saved yet, just remove the row
+    removeNewCategoryRow(categoryId)
+  } else {
+    // This is an existing category, delete from database
+    try {
+      const result = await deleteCategory(parseInt(categoryId))
+      if (result.success) {
+        console.log('Category deleted successfully')
+        await renderCategoriesTable()
+        await updateTransactionFormCategories() 
+      } else {
+        console.error('Failed to delete category:', result.error)
+        alert('Failed to delete category: ' + result.error)
       }
+    } catch (error) {
+      console.error('Error deleting category:', error)
+      alert('Error deleting category. Please try again.')
     }
-  })
-  
-  // Remove categories with empty names
-  categories = categories.filter(cat => cat.name.trim() !== '')
-  
-  exitEditMode()
-  showSuccessMessage('Categories saved successfully')
-  
-  // Update transaction forms with new categories
-  updateTransactionFormCategories()
-}
-
-function cancelCategoryEditing() {
-  // Reload categories to discard changes (for now, just exit edit mode)
-  exitEditMode()
-}
-
-function updateTransactionFormCategories() {
-  const enabledCategories = categories.filter(cat => cat.enabled)
-  
-  // Update new transaction form
-  const categorySelects = document.querySelectorAll('.category-input')
-  categorySelects.forEach(select => {
-    const selectEl = select as HTMLSelectElement
-    const currentValue = selectEl.value
-    
-    const categoryOptions = enabledCategories.length > 0 
-      ? enabledCategories.map(cat => 
-          `<option value="${cat.name}" ${cat.name === currentValue ? 'selected' : ''}>${cat.name}</option>`
-        ).join('')
-      : '<option value="" disabled>No categories available - Please create categories first</option>'
-    
-    selectEl.innerHTML = '<option value="">Select Category</option>' + categoryOptions
-  })
-  
-  // Update edit transaction category selects
-  const editCategorySelects = document.querySelectorAll('.edit-category')
-  editCategorySelects.forEach(select => {
-    const selectEl = select as HTMLSelectElement
-    const currentValue = selectEl.value
-    
-    if (enabledCategories.length > 0) {
-      selectEl.innerHTML = enabledCategories.map(cat => 
-        `<option value="${cat.name}" ${cat.name === currentValue ? 'selected' : ''}>${cat.name}</option>`
-      ).join('')
-    } else {
-      selectEl.innerHTML = `<option value="${currentValue}" selected>${currentValue} (Category disabled)</option>`
-    }
-  })
+  }
 }
 
 // Budget data structure
@@ -1847,7 +2712,7 @@ async function saveTransaction(transactionId: string) {
   }
   
   try {
-    await saveTransactionsToFile()
+    await saveAllDataToFile()
     editingTransactionId = null
     updateDashboard()
     renderRecentTransactions()

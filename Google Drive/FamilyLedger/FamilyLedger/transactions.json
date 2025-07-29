@@ -1,0 +1,12 @@
+[
+  {
+    "id": "mdoojd3rlxfrnq4uavr",
+    "description": "testTest",
+    "amount": 22,
+    "transaction_type": "expense",
+    "category": "Alimentari",
+    "account": "Checking Account",
+    "month": "2025-07",
+    "date": "2025-07-29T15:16:22.935Z"
+  }
+]

@@ -81,7 +81,6 @@
               <button class="nav-btn active" data-page="dashboard">Dashboard</button>
               <button class="nav-btn" data-page="budgets">Budgets</button>
               <button class="nav-btn" data-page="transactions">Transactions</button>
-              <button class="nav-btn" data-page="categories">Categories</button>
               <button class="nav-btn" data-page="reports">Reports</button>
             </div>
           </div>
@@ -93,6 +92,7 @@
               </div>
               <button id="manual-sync-btn" class="sync-btn" title="Manual Sync">🔄</button>
             </div>
+            <button id="settings-btn" class="settings-btn" title="Settings">⚙️</button>
           </div>
         </div>
       </nav>
@@ -188,28 +188,36 @@
             </div>
           </div>
 
-          <div id="categories" class="page">
-            <div class="categories-container">
-              <div class="categories-header">
-                <h2>Category Management</h2>
-                <div class="category-actions">
-                  <button id="edit-categories-btn" class="action-btn edit-btn">Edit Categories</button>
-                  <button id="add-category-btn" class="action-btn add-btn" style="display: none;">+ Add Category</button>
-                  <button id="save-categories-btn" class="action-btn save-btn" style="display: none;">Save Changes</button>
-                  <button id="cancel-categories-btn" class="action-btn cancel-btn" style="display: none;">Cancel</button>
-                </div>
+          <div id="settings" class="page">
+            <div class="settings-container">
+              <div class="settings-header">
+                <h2>Settings</h2>
+                <button id="back-from-settings-btn" class="action-btn secondary-btn">← Back to Dashboard</button>
               </div>
-
-              <div class="categories-table-container">
-                <div class="categories-table-header">
-                  <div>Category Name</div>
-                  <div>Available From</div>
-                  <div>Initial Budget</div>
-                  <div>Status</div>
-                  <div>Actions</div>
-                </div>
-                <div id="categories-table-body">
-                  <!-- Categories will be displayed here -->
+              
+              <div class="settings-section">
+                <h3>Category Management</h3>
+                <div class="categories-container">
+                  <div class="categories-header">
+                    <div class="category-actions">
+                      <button id="edit-categories-btn" class="action-btn edit-btn">Edit Categories</button>
+                      <button id="add-category-btn" class="action-btn add-btn" style="display: none;">+ Add Category</button>
+                      <button id="save-categories-btn" class="action-btn save-btn" style="display: none;">Save Changes</button>
+                      <button id="cancel-categories-btn" class="action-btn cancel-btn" style="display: none;">Cancel</button>
+                    </div>
+                  </div>
+                  <div class="categories-table-container">
+                    <div class="categories-table-header">
+                      <div>Category Name</div>
+                      <div>Available From</div>
+                      <div>Initial Budget</div>
+                      <div>Status</div>
+                      <div>Actions</div>
+                    </div>
+                    <div id="categories-table-body">
+                      <!-- Categories will be displayed here -->
+                    </div>
+                  </div>
                 </div>
               </div>
             </div>
