@@ -47,6 +47,7 @@ export interface Category {
   id?: number;
   name: string;
   available_from?: string;                            // Format: "YYYY-MM"
+  available_until?: string;                           // Format: "YYYY-MM"
   initial_budget?: number;
   status?: 'active' | 'inactive';
   created_at?: string;
@@ -93,6 +94,30 @@ export interface Budget {
   initial_amount: number;
   current_amount: number;
   transactions_total: number;
+  created_at?: string;
+  updated_at?: string;
+}
+
+/**
+ * Category Balance interface for tracking category balances per month
+ */
+export interface CategoryBalance {
+  id?: number;
+  category_name: string;                              // Name of the category
+  month: string;                                      // Format: "YYYY-MM"
+  balance: number;                                    // Current balance for this category in this month
+  created_at?: string;
+  updated_at?: string;
+}
+
+/**
+ * Category Distribution interface for tracking distribution allocations per month
+ */
+export interface CategoryDistribution {
+  id?: number;
+  category_name: string;                              // Name of the category
+  month: string;                                      // Format: "YYYY-MM"
+  allocation: number;                                 // Distribution allocation for this category in this month
   created_at?: string;
   updated_at?: string;
 }

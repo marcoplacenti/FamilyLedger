@@ -127,7 +127,10 @@
             </div>
 
             <div id="budget-overview" class="budget-overview" style="display: none;">
-              <h3>Budget Overview</h3>
+              <div class="budget-header">
+                <h3>Budget Overview</h3>
+                <button id="edit-distributions-btn" class="edit-btn">Edit Distributions</button>
+              </div>
               <div class="budget-table-container">
                 <div class="budget-table-header">
                   <div>Category</div>
@@ -210,9 +213,8 @@
                     <div class="categories-table-header">
                       <div>Category Name</div>
                       <div>Available From</div>
+                      <div>Available Until</div>
                       <div>Initial Budget</div>
-                      <div>Status</div>
-                      <div>Actions</div>
                     </div>
                     <div id="categories-table-body">
                       <!-- Categories will be displayed here -->

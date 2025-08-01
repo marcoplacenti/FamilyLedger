@@ -38,6 +38,9 @@ import {
   getActiveCategories
 } from './database/index';
 
+// TYPE IMPORTS
+import { Category, CategoryBalance, CategoryDistribution } from './types';
+
 // ============================================================================
 // DATA STRUCTURES & INTERFACES
 // ============================================================================
@@ -79,16 +82,16 @@ function generateId(): string {
 }
 
 /**
- * Formats numbers as USD currency
+ * Formats numbers as Danish kroner currency
  * Uses browser's built-in Intl.NumberFormat for proper localization
  * 
  * @param {number} amount - The amount to format
- * @returns {string} Formatted currency string (e.g., "$1,234.56")
+ * @returns {string} Formatted currency string (e.g., "1.234,56 kr.")
  */
 function formatCurrency(amount: number): string {
-  return new Intl.NumberFormat('en-US', {
+  return new Intl.NumberFormat('da-DK', {
     style: 'currency',
-    currency: 'USD'
+    currency: 'DKK'
   }).format(amount)
 }
 
@@ -315,10 +318,21 @@ async function submitAllTransactions() {
   // Immediately add transactions to the array for visual feedback
   transactions.push(...newTransactions)
   
+  // Update category balances for each new transaction
+  for (const transaction of newTransactions) {
+    await updateCategoryBalanceForTransaction(
+      transaction.category,
+      transaction.month,
+      transaction.amount,
+      transaction.transaction_type
+    )
+  }
+  
   // Update the UI immediately to show the new transactions
   updateDashboard()
   renderRecentTransactions()
   populateMonthSelector()
+  await loadCategoriesIntoGlobal()
   
   // Clear and reset the form immediately for better UX
   formRowsEl.innerHTML = ''
@@ -578,6 +592,11 @@ async function loadTransactions() {
     console.log('Initializing database...')
     await initializeDatabase(dataStoragePath || undefined)
     console.log('Database initialized successfully')
+    
+    // Load categories, balances, and distributions into global variables
+    await loadCategoriesIntoGlobal()
+    await loadCategoryBalances()
+    await loadCategoryDistributions()
     let loadedTransactions: Transaction[] = []
     
     if (storageType === 'googledrive') {
@@ -612,6 +631,7 @@ async function loadTransactions() {
                   const updateResult = await updateCategory(category.id, {
                     name: category.name,
                     available_from: category.available_from,
+                    available_until: category.available_until,
                     initial_budget: category.initial_budget,
                     status: category.status
                   })
@@ -621,6 +641,7 @@ async function loadTransactions() {
                     await insertCategory({
                       name: category.name,
                       available_from: category.available_from,
+                      available_until: category.available_until,
                       initial_budget: category.initial_budget,
                       status: category.status
                     })
@@ -630,6 +651,7 @@ async function loadTransactions() {
                   await insertCategory({
                     name: category.name,
                     available_from: category.available_from,
+                    available_until: category.available_until,
                     initial_budget: category.initial_budget,
                     status: category.status
                   })
@@ -684,6 +706,14 @@ async function loadTransactions() {
     updateDashboard()
     renderRecentTransactions()
     populateMonthSelector()
+    await loadCategoriesIntoGlobal()
+    
+    // Initialize distributions for existing months if distributions.json doesn't exist
+    const distributionsPath = await getCategoryDistributionsPath()
+    if (!(await exists(distributionsPath))) {
+      console.log('Distributions file not found, initializing for existing months...')
+      await initializeDistributionsForAllExistingMonths()
+    }
   } catch (error) {
     console.error('Failed to load transactions:', error)
   }
@@ -694,10 +724,16 @@ function setupEventListeners() {
   
   // Navigation
   document.querySelectorAll('.nav-btn').forEach(btn => {
-    btn.addEventListener('click', (e) => {
+    btn.addEventListener('click', async (e) => {
       const target = e.target as HTMLButtonElement
       const pageId = target.dataset.page
-      if (pageId) showPage(pageId)
+      if (pageId) {
+        showPage(pageId)
+        // Load categories when navigating to budgets page
+        if (pageId === 'budgets') {
+          await loadCategoriesIntoGlobal()
+        }
+      }
     })
   })
 
@@ -745,6 +781,12 @@ function setupEventListeners() {
         if (budgetOverviewEl) budgetOverviewEl.style.display = 'none'
       }
     })
+  }
+
+  // Edit distributions button
+  const editDistributionsBtn = document.getElementById('edit-distributions-btn')
+  if (editDistributionsBtn) {
+    editDistributionsBtn.addEventListener('click', toggleDistributionEditing)
   }
 
   // Category management
@@ -1114,8 +1156,370 @@ interface Category {
 
 // Core storage state variables
 let categories: Category[] = []                    // All available categories
+let categoryBalances: CategoryBalance[] = []       // All category balances per month
+let categoryDistributions: CategoryDistribution[] = [] // All category distributions per month
 let dataStoragePath: string | null = null         // Path where data files are stored
 let storageType: 'local' | 'googledrive' = 'local' // Storage backend type
+
+// Budget editing state
+let isEditingDistributions = false                // Whether distributions are currently being edited
+let currentEditingMonth: string | null = null     // The month currently being edited
+
+/**
+ * Load categories from database into global categories variable
+ */
+async function loadCategoriesIntoGlobal(): Promise<void> {
+  try {
+    const result = await getAllCategories()
+    if (result.success) {
+      categories = result.data || []
+      console.log(`Loaded ${categories.length} categories into global variable`)
+    } else {
+      console.error('Failed to load categories into global variable:', result.error)
+      categories = []
+    }
+  } catch (error) {
+    console.error('Error loading categories into global variable:', error)
+    categories = []
+  }
+}
+
+// ============================================================================
+// CATEGORY BALANCE MANAGEMENT
+// ============================================================================
+
+/**
+ * Get the path for category balances JSON file
+ */
+async function getCategoryBalancesPath(): Promise<string> {
+  if (dataStoragePath) {
+    return await join(dataStoragePath, 'category_balance.json')
+  } else {
+    const home = await homeDir()
+    const defaultPath = await join(home, '.familyledger')
+    return await join(defaultPath, 'category_balance.json')
+  }
+}
+
+/**
+ * Load category balances from JSON file
+ */
+async function loadCategoryBalances(): Promise<void> {
+  try {
+    const balancesPath = await getCategoryBalancesPath()
+    if (await exists(balancesPath)) {
+      const content = await readTextFile(balancesPath)
+      categoryBalances = JSON.parse(content || '[]')
+      console.log(`Loaded ${categoryBalances.length} category balances`)
+    } else {
+      categoryBalances = []
+      console.log('No category balances file found, starting fresh')
+    }
+  } catch (error) {
+    console.error('Error loading category balances:', error)
+    categoryBalances = []
+  }
+}
+
+/**
+ * Save category balances to JSON file
+ */
+async function saveCategoryBalances(): Promise<void> {
+  try {
+    const balancesPath = await getCategoryBalancesPath()
+    const content = JSON.stringify(categoryBalances, null, 2)
+    await writeTextFile(balancesPath, content)
+    console.log(`Saved ${categoryBalances.length} category balances`)
+  } catch (error) {
+    console.error('Error saving category balances:', error)
+    throw error
+  }
+}
+
+/**
+ * Get the file path for category distributions storage
+ */
+async function getCategoryDistributionsPath(): Promise<string> {
+  if (dataStoragePath) {
+    return await join(dataStoragePath, 'distributions.json')
+  } else {
+    return 'distributions.json'
+  }
+}
+
+/**
+ * Load category distributions from file
+ */
+async function loadCategoryDistributions(): Promise<void> {
+  try {
+    const distributionsPath = await getCategoryDistributionsPath()
+    if (await exists(distributionsPath)) {
+      const content = await readTextFile(distributionsPath)
+      categoryDistributions = JSON.parse(content || '[]')
+      console.log(`Loaded ${categoryDistributions.length} category distributions`)
+    } else {
+      categoryDistributions = []
+      console.log('No distributions file found, starting with empty distributions')
+    }
+  } catch (error) {
+    console.error('Error loading category distributions:', error)
+    categoryDistributions = []
+  }
+}
+
+/**
+ * Save category distributions to file
+ */
+async function saveCategoryDistributions(): Promise<void> {
+  try {
+    const distributionsPath = await getCategoryDistributionsPath()
+    const content = JSON.stringify(categoryDistributions, null, 2)
+    await writeTextFile(distributionsPath, content)
+    console.log(`Saved ${categoryDistributions.length} category distributions`)
+  } catch (error) {
+    console.error('Error saving category distributions:', error)
+    throw error
+  }
+}
+
+/**
+ * Get category balance for a specific category and month
+ */
+function getCategoryBalance(categoryName: string, month: string): CategoryBalance | null {
+  return categoryBalances.find(balance => 
+    balance.category_name === categoryName && balance.month === month
+  ) || null
+}
+
+/**
+ * Set or update category balance for a specific category and month
+ */
+function setCategoryBalance(categoryName: string, month: string, balance: number): void {
+  const existingBalance = getCategoryBalance(categoryName, month)
+  const now = new Date().toISOString()
+  
+  if (existingBalance) {
+    existingBalance.balance = balance
+    existingBalance.updated_at = now
+  } else {
+    const newBalance: CategoryBalance = {
+      id: categoryBalances.length + 1,
+      category_name: categoryName,
+      month: month,
+      balance: balance,
+      created_at: now,
+      updated_at: now
+    }
+    categoryBalances.push(newBalance)
+  }
+}
+
+/**
+ * Initialize category balance when a new category is created
+ * Sets the balance to the initial_budget for the category's available_from month
+ */
+async function initializeCategoryBalance(category: Category): Promise<void> {
+  if (!category.available_from || category.initial_budget === undefined) {
+    console.log(`Skipping balance initialization for category "${category.name}" - missing available_from or initial_budget`)
+    return
+  }
+  
+  const month = category.available_from
+  const initialBalance = category.initial_budget
+  
+  console.log(`Initializing balance for category "${category.name}" in month ${month} with balance ${initialBalance}`)
+  setCategoryBalance(category.name, month, initialBalance)
+  await saveCategoryBalances()
+}
+
+/**
+ * Initialize all active categories for a new month
+ * This is called when the first transaction for a new month is recorded
+ */
+async function initializeAllCategoriesForMonth(newMonth: string): Promise<void> {
+  console.log(`Initializing all active categories for new month: ${newMonth}`)
+  
+  // Get the previous month to carry forward balances
+  const previousMonth = getPreviousMonth(newMonth)
+  console.log(`Previous month: ${previousMonth}`)
+  
+  for (const category of categories) {
+    // Check if category is active and should be available in this month
+    if (category.status !== 'active') continue
+    
+    // Check if the category is available in this month
+    if (category.available_from && newMonth < category.available_from) continue
+    if (category.available_until && newMonth > category.available_until) continue
+    
+    // Check if we already have a balance for this category in this month
+    const existingBalance = getCategoryBalance(category.name, newMonth)
+    if (existingBalance) {
+      console.log(`Category "${category.name}" already has balance for ${newMonth}: ${existingBalance.balance}`)
+      continue
+    }
+    
+    // Get the balance from the previous month, or use initial budget if no previous balance
+    let balanceToCarryForward = category.initial_budget || 0
+    
+    if (previousMonth) {
+      const previousBalance = getCategoryBalance(category.name, previousMonth)
+      if (previousBalance) {
+        balanceToCarryForward = previousBalance.balance
+        console.log(`Carrying forward balance for "${category.name}" from ${previousMonth}: ${balanceToCarryForward}`)
+      } else {
+        console.log(`No previous balance found for "${category.name}", using initial budget: ${balanceToCarryForward}`)
+      }
+    }
+    
+    setCategoryBalance(category.name, newMonth, balanceToCarryForward)
+  }
+  
+  await saveCategoryBalances()
+  
+  // Initialize distributions for all active categories (set to 0)
+  await initializeDistributionsForMonth(newMonth)
+  
+  console.log(`Completed initialization for month ${newMonth}`)
+}
+
+/**
+ * Get the previous month in YYYY-MM format
+ */
+function getPreviousMonth(month: string): string | null {
+  try {
+    const [year, monthNum] = month.split('-').map(Number)
+    const date = new Date(year, monthNum - 1, 1) // monthNum - 1 because Date months are 0-indexed
+    date.setMonth(date.getMonth() - 1) // Go back one month
+    
+    const prevYear = date.getFullYear()
+    const prevMonth = (date.getMonth() + 1).toString().padStart(2, '0') // +1 because Date months are 0-indexed
+    
+    return `${prevYear}-${prevMonth}`
+  } catch (error) {
+    console.error('Error calculating previous month:', error)
+    return null
+  }
+}
+
+/**
+ * Update category balance when a transaction is processed
+ */
+async function updateCategoryBalanceForTransaction(
+  categoryName: string, 
+  month: string, 
+  amount: number, 
+  transactionType: 'income' | 'expense'
+): Promise<void> {
+  console.log(`Updating balance for category "${categoryName}" in ${month}: ${transactionType} ${amount}`)
+  
+  // Ensure all categories are initialized for this month if this is the first transaction
+  const monthHasBalances = categoryBalances.some(balance => balance.month === month)
+  if (!monthHasBalances) {
+    console.log(`First transaction for month ${month}, initializing all categories`)
+    await initializeAllCategoriesForMonth(month)
+  }
+  
+  // Get current balance
+  let currentBalance = getCategoryBalance(categoryName, month)
+  if (!currentBalance) {
+    // This shouldn't happen if initializeAllCategoriesForMonth worked correctly
+    console.warn(`No balance found for category "${categoryName}" in ${month}, creating with 0 balance`)
+    const category = categories.find(cat => cat.name === categoryName)
+    const initialBalance = category?.initial_budget || 0
+    setCategoryBalance(categoryName, month, initialBalance)
+    currentBalance = getCategoryBalance(categoryName, month)
+  }
+  
+  if (currentBalance) {
+    // Update balance: income increases balance, expenses decrease balance
+    const balanceChange = transactionType === 'income' ? amount : -amount
+    const newBalance = currentBalance.balance + balanceChange
+    
+    console.log(`Category "${categoryName}" balance change: ${currentBalance.balance} + ${balanceChange} = ${newBalance}`)
+    setCategoryBalance(categoryName, month, newBalance)
+    await saveCategoryBalances()
+  }
+}
+
+/**
+ * Get category distribution for a specific category and month
+ */
+function getCategoryDistribution(categoryName: string, month: string): CategoryDistribution | null {
+  return categoryDistributions.find(distribution => 
+    distribution.category_name === categoryName && distribution.month === month
+  ) || null
+}
+
+/**
+ * Set or update category distribution for a specific category and month
+ */
+function setCategoryDistribution(categoryName: string, month: string, allocation: number): void {
+  const existingDistribution = getCategoryDistribution(categoryName, month)
+  const now = new Date().toISOString()
+  
+  if (existingDistribution) {
+    existingDistribution.allocation = allocation
+    existingDistribution.updated_at = now
+  } else {
+    const newDistribution: CategoryDistribution = {
+      id: categoryDistributions.length + 1,
+      category_name: categoryName,
+      month: month,
+      allocation: allocation,
+      created_at: now,
+      updated_at: now
+    }
+    categoryDistributions.push(newDistribution)
+  }
+}
+
+/**
+ * Initialize distributions for all active categories in a new month (all set to 0)
+ */
+async function initializeDistributionsForMonth(month: string): Promise<void> {
+  console.log(`Initializing distributions for month ${month}`)
+  
+  // Get all active categories
+  const activeCategories = categories.filter(category => {
+    // Check if category is active
+    if (category.status !== 'active') return false
+    
+    // Category must be available (month >= available_from)
+    if (category.available_from && month < category.available_from) return false
+    
+    // Category must not be expired (month <= available_until)
+    if (category.available_until && month > category.available_until) return false
+    
+    return true
+  })
+  
+  // Initialize distribution to 0 for each active category
+  for (const category of activeCategories) {
+    const existingDistribution = getCategoryDistribution(category.name, month)
+    if (!existingDistribution) {
+      console.log(`Initializing distribution for category "${category.name}" in month ${month} with allocation 0`)
+      setCategoryDistribution(category.name, month, 0)
+    }
+  }
+  
+  await saveCategoryDistributions()
+}
+
+/**
+ * Initialize distributions for all existing months (called on app startup)
+ */
+async function initializeDistributionsForAllExistingMonths(): Promise<void> {
+  console.log('Initializing distributions for all existing months...')
+  
+  // Get all unique months from existing transactions
+  const uniqueMonths = [...new Set(transactions.map(t => t.month))].sort()
+  
+  for (const month of uniqueMonths) {
+    await initializeDistributionsForMonth(month)
+  }
+  
+  console.log(`Initialized distributions for ${uniqueMonths.length} existing months`)
+}
 
 // Google Drive integration state
 let googleDriveAuth: any = null                    // OAuth token data for Google Drive API calls
@@ -2189,18 +2593,11 @@ async function renderCategoriesTable() {
         <div class="category-available-from">
           <input type="month" class="category-available-from-input" value="${category.available_from || ''}" ${!editingCategories ? 'disabled' : ''} />
         </div>
+        <div class="category-available-until">
+          <input type="month" class="category-available-until-input" value="${category.available_until || ''}" ${!editingCategories ? 'disabled' : ''} />
+        </div>
         <div class="category-initial-budget">
           <input type="text" class="category-budget-input" value="${category.initial_budget || 0}" placeholder="0.00" inputmode="decimal" ${!editingCategories ? 'disabled' : ''} />
-        </div>
-        <div class="category-status">
-          <label class="toggle-switch">
-            <input type="checkbox" class="category-toggle" ${category.status === 'active' ? 'checked' : ''} ${!editingCategories ? 'disabled' : ''} />
-            <span class="toggle-slider"></span>
-          </label>
-          <span class="status-text">${category.status === 'active' ? 'Active' : 'Inactive'}</span>
-        </div>
-        <div class="category-actions">
-          ${editingCategories ? `<button class="delete-category-btn" onclick="handleCategoryDelete('${category.id}')">Delete</button>` : ''}
         </div>
       </div>
     `).join('')
@@ -2263,17 +2660,18 @@ async function saveCategories() {
       const categoryId = row.getAttribute('data-category-id')
       const nameInput = row.querySelector('.category-name-input') as HTMLInputElement
       const availableFromInput = row.querySelector('.category-available-from-input') as HTMLInputElement
+      const availableUntilInput = row.querySelector('.category-available-until-input') as HTMLInputElement
       const budgetInput = row.querySelector('.category-budget-input') as HTMLInputElement
-      const toggleInput = row.querySelector('.category-toggle') as HTMLInputElement
       
-      if (categoryId && nameInput && availableFromInput && budgetInput && toggleInput) {
+      if (categoryId && nameInput && availableFromInput && availableUntilInput && budgetInput) {
         const name = nameInput.value.trim()
         if (name) {
           const categoryData = {
             name,
             available_from: availableFromInput.value || undefined,
+            available_until: availableUntilInput.value || undefined,
             initial_budget: parseFloat(budgetInput.value) || 0,
-            status: toggleInput.checked ? 'active' as const : 'inactive' as const
+            status: 'active' as const  // All categories are now active by default
           }
           
           if (categoryId.startsWith('temp-')) {
@@ -2300,6 +2698,19 @@ async function saveCategories() {
     }
     
     exitEditMode()
+    
+    // Load updated categories into global variable
+    await loadCategoriesIntoGlobal()
+    
+    // Initialize balances for any new categories
+    for (const category of categories) {
+      if (category.available_from && category.initial_budget !== undefined) {
+        const existingBalance = getCategoryBalance(category.name, category.available_from)
+        if (!existingBalance) {
+          await initializeCategoryBalance(category)
+        }
+      }
+    }
     
     // Sync categories to Google Drive if using cloud storage
     if (storageType === 'googledrive') {
@@ -2402,18 +2813,11 @@ async function addNewCategory() {
       <div class="category-available-from">
         <input type="month" class="category-available-from-input" value="${newCategory.available_from}" />
       </div>
+      <div class="category-available-until">
+        <input type="month" class="category-available-until-input" value="" />
+      </div>
       <div class="category-initial-budget">
         <input type="text" class="category-budget-input" value="${newCategory.initial_budget}" placeholder="0.00" inputmode="decimal" />
-      </div>
-      <div class="category-status">
-        <label class="toggle-switch">
-          <input type="checkbox" class="category-toggle" checked />
-          <span class="toggle-slider"></span>
-        </label>
-        <span class="status-text">Active</span>
-      </div>
-      <div class="category-actions">
-        <button class="delete-category-btn" onclick="removeNewCategoryRow('temp-${tempId}')">Delete</button>
       </div>
     </div>
   `
@@ -2484,8 +2888,8 @@ function populateMonthSelector() {
   // Get unique months from transactions
   const uniqueMonths = [...new Set(transactions.map(t => t.month))].sort()
   
-  // Clear existing options except the first one
-  monthSelectEl.innerHTML = '<option value="">Select a month...</option>'
+  // Clear existing options
+  monthSelectEl.innerHTML = ''
   
   uniqueMonths.forEach(month => {
     const option = document.createElement('option')
@@ -2496,6 +2900,14 @@ function populateMonthSelector() {
     })
     monthSelectEl.appendChild(option)
   })
+  
+  // Auto-select the latest available month
+  if (uniqueMonths.length > 0) {
+    const latestMonth = uniqueMonths[uniqueMonths.length - 1] // Last item in sorted array is most recent
+    monthSelectEl.value = latestMonth
+    // Trigger the budget overview rendering for the selected month
+    renderBudgetOverview(latestMonth)
+  }
 }
 
 function calculateTransactionSaldo(category: string, month: string): number {
@@ -2510,19 +2922,22 @@ function calculateMonthlySalary(month: string): number {
     .reduce((sum, t) => sum + t.amount, 0)
 }
 
-function generateRandomDistribution(totalAmount: number): { [key: string]: number } {
+function generateRandomDistribution(totalAmount: number, validCategoryNames: string[]): { [key: string]: number } {
   const distributions: { [key: string]: number } = {}
   let remainingAmount = totalAmount
-  const categoryNames = budgetCategories.map(cat => cat.name)
+  
+  if (validCategoryNames.length === 0) {
+    return distributions
+  }
   
   // Generate random weights for each category
-  const weights = categoryNames.map(() => Math.random())
+  const weights = validCategoryNames.map(() => Math.random())
   const totalWeight = weights.reduce((sum, weight) => sum + weight, 0)
   
   // Distribute the amount based on weights
-  for (let i = 0; i < categoryNames.length; i++) {
-    const categoryName = categoryNames[i]
-    if (i === categoryNames.length - 1) {
+  for (let i = 0; i < validCategoryNames.length; i++) {
+    const categoryName = validCategoryNames[i]
+    if (i === validCategoryNames.length - 1) {
       // Last category gets the remaining amount to ensure exact total
       distributions[categoryName] = Math.round(remainingAmount * 100) / 100
     } else {
@@ -2538,29 +2953,42 @@ function generateRandomDistribution(totalAmount: number): { [key: string]: numbe
 function getMonthlyDistributions(month: string): { [key: string]: number } {
   const monthlySalary = calculateMonthlySalary(month)
   
-  if (monthlySalary === 0) {
-    // No salary for this month, use default distributions
+  // Get valid categories for this month
+  const validCategories = categories.filter(category => {
+    // Check if category is active
+    if (category.status !== 'active') return false
+    
+    // Category must be available (month >= available_from)
+    if (category.available_from && month < category.available_from) return false
+    
+    // Category must not be expired (month <= available_until)
+    if (category.available_until && month > category.available_until) return false
+    
+    // Month is between available_from and available_until (both inclusive)
+    return true
+  })
+  
+  const validCategoryNames = validCategories.map(cat => cat.name)
+  
+  if (monthlySalary === 0 || validCategoryNames.length === 0) {
+    // No salary for this month or no valid categories, return empty distributions
     const defaultDistributions: { [key: string]: number } = {}
-    budgetCategories.forEach(cat => {
-      defaultDistributions[cat.name] = cat.distribution
+    validCategoryNames.forEach(name => {
+      defaultDistributions[name] = 0
     })
     return defaultDistributions
   }
   
-  // Check if current total distribution matches salary
-  const currentTotal = budgetCategories.reduce((sum, cat) => sum + cat.distribution, 0)
+  // For now, generate a simple equal distribution among valid categories
+  // This could be enhanced later with saved preferences or more sophisticated logic
+  const distributionPerCategory = monthlySalary / validCategoryNames.length
+  const distributions: { [key: string]: number } = {}
   
-  if (Math.abs(currentTotal - monthlySalary) < 0.01) {
-    // Totals match (within rounding tolerance), use existing distributions
-    const existingDistributions: { [key: string]: number } = {}
-    budgetCategories.forEach(cat => {
-      existingDistributions[cat.name] = cat.distribution
-    })
-    return existingDistributions
-  }
+  validCategoryNames.forEach(name => {
+    distributions[name] = Math.round(distributionPerCategory * 100) / 100
+  })
   
-  // Totals don't match, generate new random distribution
-  return generateRandomDistribution(monthlySalary)
+  return distributions
 }
 
 function renderBudgetOverview(selectedMonth: string) {
@@ -2571,24 +2999,68 @@ function renderBudgetOverview(selectedMonth: string) {
 
   budgetOverviewEl.style.display = 'block'
   
+  console.log(`=== BUDGET OVERVIEW DEBUG ===`)
+  console.log(`Selected month: ${selectedMonth}`)
+  console.log(`Total categories available: ${categories.length}`)
+  console.log(`Categories:`, categories)
+  
   // Clear any existing summary
   const existingSummary = budgetOverviewEl.querySelector('.budget-summary')
   if (existingSummary) {
     existingSummary.remove()
   }
   
+  // Filter categories that are valid for the selected month
+  const validCategories = categories.filter(category => {
+    // Check if category is active
+    if (category.status !== 'active') return false
+    
+    // Category must be available (selectedMonth >= available_from)
+    if (category.available_from && selectedMonth < category.available_from) {
+      return false
+    }
+    
+    // Category must not be expired (selectedMonth <= available_until)
+    if (category.available_until && selectedMonth > category.available_until) {
+      return false
+    }
+    
+    // If we get here, the category is valid for this month
+    return true
+  })
+  
+  console.log(`Budget Overview: Found ${validCategories.length} valid categories for ${selectedMonth}:`, validCategories.map(c => c.name))
+  
   // Get dynamic distributions based on salary for this month
   const monthlyDistributions = getMonthlyDistributions(selectedMonth)
   
-  budgetTableBodyEl.innerHTML = budgetCategories.map(category => {
+  budgetTableBodyEl.innerHTML = validCategories.map(category => {
+    // Get the current balance for this month
+    const categoryBalance = getCategoryBalance(category.name, selectedMonth)
+    const currentBalance = categoryBalance ? categoryBalance.balance : 0
+    
+    // Get the initial budget (balance from previous month or category's initial_budget)
+    const previousMonth = getPreviousMonth(selectedMonth)
+    let initialBudget = category.initial_budget || 0
+    
+    if (previousMonth) {
+      const previousBalance = getCategoryBalance(category.name, previousMonth)
+      if (previousBalance) {
+        initialBudget = previousBalance.balance
+      }
+    }
+    
+    // Calculate actual transactions for this month
     const transactionSaldo = calculateTransactionSaldo(category.name, selectedMonth)
-    const distribution = monthlyDistributions[category.name] || 0
-    const currentBalance = category.initialBudget + distribution - transactionSaldo
+    
+    // Get actual distribution for this category in this month (default to 0)
+    const categoryDistribution = getCategoryDistribution(category.name, selectedMonth)
+    const distribution = categoryDistribution ? categoryDistribution.allocation : 0
     
     return `
       <div class="budget-row">
         <div class="category">${category.name}</div>
-        <div class="initial-budget">${formatCurrency(category.initialBudget)}</div>
+        <div class="initial-budget">${formatCurrency(initialBudget)}</div>
         <div class="distribution">${formatCurrency(distribution)}</div>
         <div class="transactions">${formatCurrency(transactionSaldo)}</div>
         <div class="current-balance ${currentBalance < 0 ? 'negative' : 'positive'}">${formatCurrency(currentBalance)}</div>
@@ -2612,6 +3084,152 @@ function renderBudgetOverview(selectedMonth: string) {
     `
     budgetOverviewEl.appendChild(summaryEl)
   }
+}
+
+/**
+ * Toggle distribution editing mode
+ */
+function toggleDistributionEditing() {
+  const editBtn = document.getElementById('edit-distributions-btn') as HTMLButtonElement
+  const monthSelectEl = document.getElementById('budget-month-select') as HTMLSelectElement
+  
+  if (!editBtn || !monthSelectEl) return
+  
+  const selectedMonth = monthSelectEl.value
+  if (!selectedMonth) {
+    alert('Please select a month first')
+    return
+  }
+  
+  if (isEditingDistributions) {
+    // Finish editing - save changes and exit edit mode
+    finishDistributionEditing(selectedMonth)
+  } else {
+    // Start editing mode
+    startDistributionEditing(selectedMonth)
+  }
+}
+
+/**
+ * Start distribution editing mode
+ */
+function startDistributionEditing(month: string) {
+  isEditingDistributions = true
+  currentEditingMonth = month
+  
+  // Update button text
+  const editBtn = document.getElementById('edit-distributions-btn') as HTMLButtonElement
+  if (editBtn) {
+    editBtn.textContent = 'Finish Editing'
+    editBtn.classList.add('editing')
+  }
+  
+  // Convert distribution displays to input fields
+  const budgetRows = document.querySelectorAll('.budget-row')
+  budgetRows.forEach((row, index) => {
+    const distributionCell = row.querySelector('.distribution') as HTMLElement
+    if (distributionCell) {
+      // Parse Danish kroner format: remove "kr.", periods (thousands separator), and convert comma to dot for decimal
+      const currentValue = distributionCell.textContent?.replace(/[kr.\s]/g, '').replace(/\./g, '').replace(/,/g, '.') || '0'
+      distributionCell.innerHTML = `<input type="number" class="distribution-input" value="${currentValue}" step="0.01" placeholder="Enter amount..." title="Edit distribution amount" />`
+    }
+  })
+  
+  // Add visual editing indicator to the budget overview
+  const budgetOverviewEl = document.getElementById('budget-overview')
+  if (budgetOverviewEl) {
+    budgetOverviewEl.classList.add('editing-mode')
+  }
+  
+  // Add a temporary editing notice
+  const budgetTableContainer = document.querySelector('.budget-table-container')
+  if (budgetTableContainer) {
+    const editingNotice = document.createElement('div')
+    editingNotice.className = 'editing-notice'
+    editingNotice.innerHTML = `
+      <div class="editing-notice-content">
+        <span class="editing-icon">✏️</span>
+        <span>Edit the distribution amounts and click "Finish Editing" to save changes</span>
+      </div>
+    `
+    budgetTableContainer.insertBefore(editingNotice, budgetTableContainer.firstChild)
+  }
+  
+  console.log(`Started editing distributions for ${month}`)
+}
+
+/**
+ * Finish distribution editing mode and save changes
+ */
+async function finishDistributionEditing(month: string) {
+  const budgetRows = document.querySelectorAll('.budget-row')
+  const distributionChanges: { [categoryName: string]: { oldValue: number, newValue: number } } = {}
+  
+  // Collect all distribution changes
+  budgetRows.forEach((row) => {
+    const categoryName = row.querySelector('.category')?.textContent || ''
+    const distributionInput = row.querySelector('.distribution-input') as HTMLInputElement
+    
+    if (distributionInput && categoryName) {
+      const newValue = parseFloat(distributionInput.value) || 0
+      const oldDistribution = getCategoryDistribution(categoryName, month)
+      const oldValue = oldDistribution ? oldDistribution.allocation : 0
+      
+      if (oldValue !== newValue) {
+        distributionChanges[categoryName] = { oldValue, newValue }
+      }
+    }
+  })
+  
+  // Update distributions and balances
+  for (const [categoryName, change] of Object.entries(distributionChanges)) {
+    // Update distribution
+    setCategoryDistribution(categoryName, month, change.newValue)
+    
+    // Update balance (add the difference to current balance)
+    const balanceChange = change.newValue - change.oldValue
+    const currentBalance = getCategoryBalance(categoryName, month)
+    if (currentBalance) {
+      const newBalance = currentBalance.balance + balanceChange
+      setCategoryBalance(categoryName, month, newBalance)
+      console.log(`Updated ${categoryName}: distribution ${change.oldValue} → ${change.newValue}, balance changed by ${balanceChange}`)
+    }
+  }
+  
+  // Save to files
+  if (Object.keys(distributionChanges).length > 0) {
+    await saveCategoryDistributions()
+    await saveCategoryBalances()
+    console.log(`Saved ${Object.keys(distributionChanges).length} distribution changes`)
+  }
+  
+  // Exit editing mode
+  isEditingDistributions = false
+  currentEditingMonth = null
+  
+  // Update button text
+  const editBtn = document.getElementById('edit-distributions-btn') as HTMLButtonElement
+  if (editBtn) {
+    editBtn.textContent = 'Edit Distributions'
+    editBtn.classList.remove('editing')
+  }
+  
+  // Remove visual editing indicators
+  const budgetOverviewEl = document.getElementById('budget-overview')
+  if (budgetOverviewEl) {
+    budgetOverviewEl.classList.remove('editing-mode')
+  }
+  
+  // Remove editing notice
+  const editingNotice = document.querySelector('.editing-notice')
+  if (editingNotice) {
+    editingNotice.remove()
+  }
+  
+  // Re-render the budget overview to show updated values
+  renderBudgetOverview(month)
+  
+  console.log(`Finished editing distributions for ${month}`)
 }
 
 function editTransaction(transactionId: string) {

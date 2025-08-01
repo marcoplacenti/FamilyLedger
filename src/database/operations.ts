@@ -108,6 +108,7 @@ async function createSchema(): Promise<void> {
           id INTEGER PRIMARY KEY AUTOINCREMENT,
           name TEXT NOT NULL UNIQUE,
           available_from TEXT,
+          available_until TEXT,
           initial_budget REAL DEFAULT 0,
           status TEXT DEFAULT 'active' CHECK (status IN ('active', 'inactive')),
           created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
