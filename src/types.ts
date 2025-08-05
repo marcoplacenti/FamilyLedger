@@ -75,6 +75,8 @@ export interface Account {
   id?: number;
   name: string;
   type?: 'checking' | 'savings' | 'credit' | 'investment';
+  initial_balance?: number;
+  color?: string;
   status?: 'active' | 'inactive';
   created_at?: string;
   updated_at?: string;

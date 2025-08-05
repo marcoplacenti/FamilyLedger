@@ -197,6 +197,14 @@
                 <button id="back-from-settings-btn" class="action-btn secondary-btn">← Back to Dashboard</button>
               </div>
               
+              <!-- Balance Validation Status -->
+              <div id="balance-validation-status" class="validation-status">
+                <div class="status-indicator">
+                  <span class="status-icon">⚠️</span>
+                  <span class="status-text">Checking balance...</span>
+                </div>
+              </div>
+              
               <div class="settings-section">
                 <h3>Category Management</h3>
                 <div class="categories-container">
@@ -218,6 +226,33 @@
                     <div id="categories-table-body">
                       <!-- Categories will be displayed here -->
                     </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+            
+            <div class="settings-section">
+              <h3>Account Management</h3>
+              <div class="accounts-container">
+                <div class="accounts-header">
+                  <div class="account-actions">
+                    <button id="edit-accounts-btn" class="action-btn edit-btn">Edit Accounts</button>
+                    <button id="add-account-btn" class="action-btn add-btn" style="display: none;">+ Add Account</button>
+                    <button id="save-accounts-btn" class="action-btn save-btn" style="display: none;">Save Changes</button>
+                    <button id="cancel-accounts-btn" class="action-btn cancel-btn" style="display: none;">Cancel</button>
+                  </div>
+                </div>
+                <div class="accounts-table-container">
+                  <div class="accounts-table-header">
+                    <div>Account Name</div>
+                    <div>Account Type</div>
+                    <div>Initial Balance</div>
+                    <div>Color</div>
+                    <div>Status</div>
+                    <div>Actions</div>
+                  </div>
+                  <div id="accounts-table-body">
+                    <!-- Accounts will be displayed here -->
                   </div>
                 </div>
               </div>

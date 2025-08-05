@@ -39,7 +39,7 @@ import {
 } from './database/index';
 
 // TYPE IMPORTS
-import { Category as DatabaseCategory, CategoryBalance, CategoryDistribution } from './types';
+import { Category as DatabaseCategory, CategoryBalance, CategoryDistribution, Account } from './types';
 
 // ============================================================================
 // DATA STRUCTURES & INTERFACES
@@ -195,6 +195,13 @@ function showPage(pageId: string) {
   
   if (page) page.classList.add('active')
   if (navBtn) navBtn.classList.add('active')
+  
+  // Special handling for settings page - ensure accounts table is rendered
+  if (pageId === 'settings') {
+    setTimeout(() => {
+      renderAccountsTable()
+    }, 100)
+  }
 }
 
 // ============================================================================
@@ -209,22 +216,36 @@ function showPage(pageId: string) {
  * - Total monthly expenses
  */
 function updateDashboard() {
-  // Calculate total balance by processing all transactions
-  // Transfers don't affect balance (they move money between accounts)
-  const totalBalance = transactions.reduce((sum, t) => {
-    if (t.transaction_type === 'transfer') return sum
-    return sum + (t.transaction_type === 'income' ? t.amount : -t.amount)
-  }, 0)
+  const cacheKey = 'dashboard-summary'
   
-  // Calculate total income (all income transactions)
-  const monthlyIncome = transactions
-    .filter(t => t.transaction_type === 'income')
-    .reduce((sum, t) => sum + t.amount, 0)
-    
-  // Calculate total expenses (all expense transactions)
-  const monthlyExpenses = transactions
-    .filter(t => t.transaction_type === 'expense')
-    .reduce((sum, t) => sum + t.amount, 0)
+  // Return cached result if available and valid
+  if (performanceCache.isValid() && performanceCache.monthlyData.has(cacheKey)) {
+    const cached = performanceCache.monthlyData.get(cacheKey)!
+    updateDashboardDOM(cached.totalBalance, cached.monthlyIncome, cached.monthlyExpenses)
+    return
+  }
+  
+  // Single pass through all transactions for optimal performance
+  const summary = transactions.reduce((acc, t) => {
+    if (t.transaction_type === 'income') {
+      acc.totalBalance += t.amount
+      acc.monthlyIncome += t.amount
+    } else if (t.transaction_type === 'expense') {
+      acc.totalBalance -= t.amount
+      acc.monthlyExpenses += t.amount
+    }
+    // Transfers don't affect balance (they move money between accounts)
+    return acc
+  }, { totalBalance: 0, monthlyIncome: 0, monthlyExpenses: 0 })
+  
+  // Cache the results
+  performanceCache.monthlyData.set(cacheKey, summary)
+  
+  updateDashboardDOM(summary.totalBalance, summary.monthlyIncome, summary.monthlyExpenses)
+}
+
+// Separate DOM update function for better organization
+function updateDashboardDOM(totalBalance: number, monthlyIncome: number, monthlyExpenses: number) {
 
   // Find DOM elements for dashboard cards using CSS selectors
   const balanceEl = document.querySelector('.summary-cards .card:nth-child(1) .amount')
@@ -261,7 +282,7 @@ function renderRecentTransactions() {
       <div class="description">${t.description}</div>
       <div class="amount">${formatCurrency(t.amount)}</div>
       <div class="category">${t.category}</div>
-      <div class="account">${t.account}</div>
+      <div class="account" style="color: ${getAccountColor(t.account)}; font-weight: 600;">${t.account}</div>
       <div class="type">${t.transaction_type}</div>
       <div class="date">${new Date(t.date).toLocaleDateString()}</div>
       <div class="actions">
@@ -296,6 +317,12 @@ function createFormRow(): string {
     ? enabledCategories.map(cat => `<option value="${cat.name}">${cat.name}</option>`).join('')
     : '<option value="" disabled>No categories available - Please create categories first</option>'
   
+  // Get only active accounts for the dropdown
+  const activeAccounts = accounts.filter(account => account.status === 'active')
+  const accountOptions = activeAccounts.length > 0 
+    ? activeAccounts.map(account => `<option value="${account.name}" data-color="${account.color || '#6b7280'}">${account.name}</option>`).join('')
+    : '<option value="" disabled>No accounts available - Please create accounts first</option>'
+  
   return `
     <div class="form-row" data-row="${formRowCounter++}">
       <input type="month" class="month-input" value="${monthValue}" />
@@ -307,11 +334,7 @@ function createFormRow(): string {
       </select>
       <select class="account-input">
         <option value="">Select Account</option>
-        <option value="Checking Account">Checking Account</option>
-        <option value="Savings Account">Savings Account</option>
-        <option value="Credit Card">Credit Card</option>
-        <option value="Cash">Cash</option>
-        <option value="Investment Account">Investment Account</option>
+        ${accountOptions}
       </select>
       <select class="type-input">
         <option value="expense">Expense</option>
@@ -326,7 +349,39 @@ function addFormRow() {
   const formRowsEl = document.getElementById('transaction-form-rows')
   if (formRowsEl) {
     formRowsEl.insertAdjacentHTML('beforeend', createFormRow())
+    // Ensure all existing dropdowns are also updated with latest account data
+    updateTransactionFormAccounts()
+    // Add event listeners for account color changes
+    addAccountColorListeners()
   }
+}
+
+/**
+ * Add event listeners to apply account colors when account is selected
+ */
+function addAccountColorListeners() {
+  const accountSelects = document.querySelectorAll('.account-input')
+  accountSelects.forEach(select => {
+    const selectEl = select as HTMLSelectElement
+    selectEl.addEventListener('change', (e) => {
+      const target = e.target as HTMLSelectElement
+      const selectedOption = target.selectedOptions[0]
+      if (selectedOption && selectedOption.dataset.color) {
+        target.style.color = selectedOption.dataset.color
+        target.style.fontWeight = '600'
+      } else {
+        target.style.color = ''
+        target.style.fontWeight = ''
+      }
+    })
+    
+    // Apply color immediately if there's already a selected value
+    const selectedOption = selectEl.selectedOptions[0]
+    if (selectedOption && selectedOption.dataset.color) {
+      selectEl.style.color = selectedOption.dataset.color
+      selectEl.style.fontWeight = '600'
+    }
+  })
 }
 
 function removeFormRow() {
@@ -391,14 +446,19 @@ async function submitAllTransactions() {
   // Immediately add transactions to the array for visual feedback
   transactions.push(...newTransactions)
   
-  // Update category balances for each new transaction
+  // Invalidate cache since data has changed
+  performanceCache.invalidate()
+  
+  // Update category balances for each new transaction (skip transfers)
   for (const transaction of newTransactions) {
-    await updateCategoryBalanceForTransaction(
-      transaction.category,
-      transaction.month,
-      transaction.amount,
-      transaction.transaction_type
-    )
+    if (transaction.transaction_type !== 'transfer') {
+      await updateCategoryBalanceForTransaction(
+        transaction.category,
+        transaction.month,
+        transaction.amount,
+        transaction.transaction_type as 'income' | 'expense'
+      )
+    }
   }
   
   // Update the UI immediately to show the new transactions
@@ -681,19 +741,34 @@ async function saveAllDataToFile(): Promise<boolean> {
 }
 
 async function loadTransactions() {
+  // Prevent multiple simultaneous loading operations
+  if (dataLoadingInProgress) {
+    console.log('Data loading already in progress, skipping...')
+    return
+  }
+  
+  dataLoadingInProgress = true
+  console.log('=== LOADING TRANSACTIONS ===')
+  console.log('Storage type:', storageType)
+  
+  // Show loading indicator
+  showLoadingIndicator('Loading data...')
+  
   try {
-    console.log('=== LOADING TRANSACTIONS ===')
-    console.log('Storage type:', storageType)
-    
     // Initialize database first
     console.log('Initializing database...')
     await initializeDatabase(dataStoragePath || undefined)
     console.log('Database initialized successfully')
     
-    // Load categories, balances, and distributions into global variables
-    await loadCategoriesIntoGlobal()
-    await loadCategoryBalances()
-    await loadCategoryDistributions()
+    // Load categories, accounts, balances, and distributions in parallel for better performance
+    console.log('Loading data in parallel...')
+    await Promise.all([
+      loadCategoriesIntoGlobal(),
+      loadAccountsIntoGlobal(),
+      loadCategoryBalances(),
+      loadCategoryDistributions()
+    ])
+    console.log('Parallel data loading completed')
     let loadedTransactions: Transaction[] = []
     
     if (storageType === 'googledrive') {
@@ -711,9 +786,15 @@ async function loadTransactions() {
           console.log('Parsed transactions from Google Drive:', loadedTransactions.length, 'items')
         }
         
-        // Also try to load categories from Google Drive
-        console.log('Calling loadFromGoogleDrive for categories...')
-        const categoriesContent = await loadFromGoogleDrive('categories.json')
+        // Load categories, accounts, and other data from Google Drive in parallel
+        console.log('Loading categories, accounts, and other data from Google Drive in parallel...')
+        const [categoriesContent, accountsContent, , ] = await Promise.all([
+          loadFromGoogleDrive('categories.json'),
+          loadFromGoogleDrive('accounts.json'),
+          loadFromGoogleDrive('category_balance.json'),
+          loadFromGoogleDrive('distributions.json')
+        ])
+        
         console.log('Categories loadFromGoogleDrive result:', categoriesContent ? 'content received' : 'no content')
         if (categoriesContent) {
           try {
@@ -760,6 +841,20 @@ async function loadTransactions() {
             console.log('Categories synced from Google Drive to local database')
           } catch (categoriesParseError) {
             console.error('Error parsing categories from Google Drive:', categoriesParseError)
+          }
+        }
+        
+        console.log('Accounts loadFromGoogleDrive result:', accountsContent ? 'content received' : 'no content')
+        if (accountsContent) {
+          try {
+            const driveAccounts = JSON.parse(accountsContent)
+            console.log('Parsed accounts from Google Drive:', driveAccounts.length, 'items')
+            
+            // Update local accounts array with Google Drive accounts
+            accounts = driveAccounts
+            console.log('Accounts synced from Google Drive to local variable')
+          } catch (accountsParseError) {
+            console.error('Error parsing accounts from Google Drive:', accountsParseError)
           }
         }
       } catch (error) {
@@ -813,7 +908,51 @@ async function loadTransactions() {
     }
   } catch (error) {
     console.error('Failed to load transactions:', error)
+    alert('Failed to load transactions. Please check your connection and try again.')
+  } finally {
+    dataLoadingInProgress = false
+    hideLoadingIndicator()
   }
+}
+
+// Loading indicator functions for better user experience
+function showLoadingIndicator(message: string = 'Loading...') {
+  const indicator = document.getElementById('loading-indicator') || createLoadingIndicator()
+  const messageEl = indicator.querySelector('.loading-message')
+  if (messageEl) messageEl.textContent = message
+  indicator.style.display = 'flex'
+}
+
+function hideLoadingIndicator() {
+  const indicator = document.getElementById('loading-indicator')
+  if (indicator) indicator.style.display = 'none'
+}
+
+function createLoadingIndicator(): HTMLElement {
+  const indicator = document.createElement('div')
+  indicator.id = 'loading-indicator'
+  indicator.style.cssText = `
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.7);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 9999;
+    color: white;
+    font-size: 18px;
+  `
+  indicator.innerHTML = `
+    <div style="text-align: center;">
+      <div style="margin-bottom: 10px;">⏳</div>
+      <div class="loading-message">Loading...</div>
+    </div>
+  `
+  document.body.appendChild(indicator)
+  return indicator
 }
 
 function setupEventListeners() {
@@ -908,6 +1047,27 @@ function setupEventListeners() {
   const cancelCategoriesBtn = document.getElementById('cancel-categories-btn')
   if (cancelCategoriesBtn) {
     cancelCategoriesBtn.addEventListener('click', cancelCategoryEditing)
+  }
+
+  // Account management
+  const editAccountsBtn = document.getElementById('edit-accounts-btn')
+  if (editAccountsBtn) {
+    editAccountsBtn.addEventListener('click', enterAccountEditMode)
+  }
+
+  const addAccountBtn = document.getElementById('add-account-btn')
+  if (addAccountBtn) {
+    addAccountBtn.addEventListener('click', addNewAccount)
+  }
+
+  const saveAccountsBtn = document.getElementById('save-accounts-btn')
+  if (saveAccountsBtn) {
+    saveAccountsBtn.addEventListener('click', saveAccounts)
+  }
+
+  const cancelAccountsBtn = document.getElementById('cancel-accounts-btn')
+  if (cancelAccountsBtn) {
+    cancelAccountsBtn.addEventListener('click', cancelAccountEditing)
   }
 
   // Data location modal
@@ -1139,6 +1299,9 @@ window.addEventListener('DOMContentLoaded', async () => {
     // These run regardless of first launch or not
     await renderCategoriesTable()   // Initialize categories table display
     updateTransactionFormCategories() // Initialize transaction form categories
+    await renderAccountsTable()    // Initialize accounts table display
+    updateTransactionFormAccounts() // Initialize transaction form accounts
+    addAccountColorListeners()      // Initialize account color listeners
 
     // Online/offline detection
     window.addEventListener('online', () => {
@@ -1257,6 +1420,37 @@ interface Category {
 let categories: Category[] = []                    // All available categories
 let categoryBalances: CategoryBalance[] = []       // All category balances per month
 let categoryDistributions: CategoryDistribution[] = [] // All category distributions per month
+let accounts: Account[] = []                       // All available accounts
+
+// Performance optimization flags
+let migrationCompleted = false
+let dataLoadingInProgress = false
+
+// Performance caching
+const performanceCache = {
+  balanceCalculations: new Map<string, number>(),
+  transactionSums: new Map<string, number>(),
+  monthlyData: new Map<string, any>(),
+  budgetOverviews: new Map<string, string>(), // Cache rendered HTML for each month
+  categoryValidation: new Map<string, boolean>(), // Cache category validation results
+  lastCacheUpdate: 0,
+  
+  // Clear cache when data changes
+  invalidate() {
+    this.balanceCalculations.clear()
+    this.transactionSums.clear()
+    this.monthlyData.clear()
+    this.budgetOverviews.clear()
+    this.categoryValidation.clear()
+    this.lastCacheUpdate = Date.now()
+    console.log('Performance cache invalidated')
+  },
+  
+  // Check if cache is still valid (5 minutes)
+  isValid(): boolean {
+    return Date.now() - this.lastCacheUpdate < 300000
+  }
+}
 let dataStoragePath: string | null = null         // Path where data files are stored
 let storageType: 'local' | 'googledrive' = 'local' // Storage backend type
 
@@ -1287,6 +1481,27 @@ async function loadCategoriesIntoGlobal(): Promise<void> {
   } catch (error) {
     console.error('Error loading categories into global variable:', error)
     categories = []
+  }
+}
+
+/**
+ * Load accounts from file into global accounts variable
+ */
+async function loadAccountsIntoGlobal(): Promise<void> {
+  try {
+    accounts = await loadAccountsFile()
+    console.log(`Loaded ${accounts.length} accounts into global variable`)
+    // Re-render the accounts table after loading
+    await renderAccountsTable()
+    // Update transaction form account dropdowns
+    await updateTransactionFormAccounts()
+  } catch (error) {
+    console.error('Error loading accounts into global variable:', error)
+    accounts = getDefaultAccounts()
+    // Re-render with default accounts
+    await renderAccountsTable()
+    // Update transaction form account dropdowns
+    await updateTransactionFormAccounts()
   }
 }
 
@@ -2729,6 +2944,9 @@ async function handleGoogleDriveFolderSelection() {
 async function renderCategoriesTable() {
   const categoriesTableBodyEl = document.getElementById('categories-table-body')
   if (!categoriesTableBodyEl) return
+  
+  // Update balance validation display when categories table is rendered
+  setTimeout(() => updateBalanceValidationDisplay(), 100)
 
   try {
     const result = await getAllCategories()
@@ -2757,7 +2975,7 @@ async function renderCategoriesTable() {
           <input type="month" class="category-available-until-input" value="${category.available_until || ''}" ${!editingCategories ? 'disabled' : ''} />
         </div>
         <div class="category-initial-budget">
-          <input type="text" class="category-budget-input" value="${category.initial_budget || 0}" placeholder="0.00" inputmode="decimal" ${!editingCategories ? 'disabled' : ''} />
+          <input type="text" class="category-budget-input" value="${editingCategories ? (category.initial_budget || 0) : formatCurrency(category.initial_budget || 0)}" placeholder="0.00" inputmode="decimal" ${!editingCategories ? 'disabled' : ''} />
         </div>
       </div>
     `).join('')
@@ -2862,6 +3080,13 @@ async function saveCategories() {
     // Load updated categories into global variable
     await loadCategoriesIntoGlobal()
     
+    // Validate balances after loading categories
+    if (!showBalanceValidationWarning()) {
+      // Categories were already saved to database, so we just show a message
+      // but don't prevent the save since it's already done
+      console.log('User was warned about balance mismatch but categories are already saved')
+    }
+    
     // Initialize balances for any new categories
     for (const category of categories) {
       if (category.availableFrom && category.initialBudget !== undefined) {
@@ -2884,6 +3109,9 @@ async function saveCategories() {
     } else {
       showSuccessMessage('Categories saved successfully')
     }
+    
+    // Update balance validation display
+    updateBalanceValidationDisplay()
     
     // Update transaction forms with new categories
     await updateTransactionFormCategories()
@@ -2977,7 +3205,7 @@ async function addNewCategory() {
         <input type="month" class="category-available-until-input" value="" />
       </div>
       <div class="category-initial-budget">
-        <input type="text" class="category-budget-input" value="${newCategory.initial_budget}" placeholder="0.00" inputmode="decimal" />
+        <input type="text" class="category-budget-input" value="0" placeholder="0.00" inputmode="decimal" />
       </div>
     </div>
   `
@@ -3023,6 +3251,421 @@ async function handleCategoryDelete(categoryId: string) {
       alert('Error deleting category. Please try again.')
     }
   }
+}
+
+// ============================================================================
+// ACCOUNT MANAGEMENT FUNCTIONS
+// ============================================================================
+
+let editingAccounts = false
+
+async function renderAccountsTable() {
+  console.log('renderAccountsTable called with', accounts.length, 'accounts')
+  const accountsTableBodyEl = document.getElementById('accounts-table-body')
+  if (!accountsTableBodyEl) {
+    console.log('accounts-table-body element not found')
+    return
+  }
+  
+  // Update balance validation display when accounts table is rendered
+  setTimeout(() => updateBalanceValidationDisplay(), 100)
+
+  if (accounts.length === 0) {
+    console.log('No accounts to display, showing empty state')
+    accountsTableBodyEl.innerHTML = '<div class="empty-state">No accounts created yet. Click "Edit Accounts" to get started.</div>'
+    return
+  }
+
+  console.log('Rendering', accounts.length, 'accounts:', accounts.map(a => a.name))
+
+  accountsTableBodyEl.innerHTML = accounts.map(account => `
+    <div class="account-row" data-account-id="${account.id}">
+      <div class="account-name">
+        <input type="text" class="account-name-input" value="${account.name}" ${!editingAccounts ? 'disabled' : ''} />
+      </div>
+      <div class="account-type">
+        <select class="account-type-input" ${!editingAccounts ? 'disabled' : ''}>
+          <option value="checking" ${account.type === 'checking' ? 'selected' : ''}>Checking</option>
+          <option value="savings" ${account.type === 'savings' ? 'selected' : ''}>Savings</option>
+          <option value="credit" ${account.type === 'credit' ? 'selected' : ''}>Credit Card</option>
+          <option value="investment" ${account.type === 'investment' ? 'selected' : ''}>Investment</option>
+        </select>
+      </div>
+      <div class="account-initial-balance">
+        <input type="text" class="account-balance-input" value="${editingAccounts ? (account.initial_balance || 0) : formatCurrency(account.initial_balance || 0)}" placeholder="0.00" inputmode="decimal" ${!editingAccounts ? 'disabled' : ''} />
+      </div>
+      <div class="account-color">
+        <input type="color" class="account-color-input" value="${account.color || '#2563eb'}" ${!editingAccounts ? 'disabled' : ''} />
+        ${!editingAccounts ? `<span class="color-preview" style="background-color: ${account.color || '#2563eb'}"></span>` : ''}
+      </div>
+      <div class="account-status">
+        <select class="account-status-input" ${!editingAccounts ? 'disabled' : ''}>
+          <option value="active" ${account.status === 'active' ? 'selected' : ''}>Active</option>
+          <option value="inactive" ${account.status === 'inactive' ? 'selected' : ''}>Inactive</option>
+        </select>
+      </div>
+      <div class="account-actions">
+        ${editingAccounts ? `<button type="button" class="delete-btn" onclick="handleAccountDelete('${account.id}')">🗑️</button>` : ''}
+      </div>
+    </div>
+  `).join('')
+}
+
+async function enterAccountEditMode() {
+  editingAccounts = true
+  
+  // Show/hide buttons
+  document.getElementById('edit-accounts-btn')!.style.display = 'none'
+  document.getElementById('add-account-btn')!.style.display = 'inline-block'
+  document.getElementById('save-accounts-btn')!.style.display = 'inline-block'
+  document.getElementById('cancel-accounts-btn')!.style.display = 'inline-block'
+  
+  await renderAccountsTable()
+}
+
+async function exitAccountEditMode() {
+  editingAccounts = false
+  
+  // Show/hide buttons
+  document.getElementById('edit-accounts-btn')!.style.display = 'inline-block'
+  document.getElementById('add-account-btn')!.style.display = 'none'
+  document.getElementById('save-accounts-btn')!.style.display = 'none'
+  document.getElementById('cancel-accounts-btn')!.style.display = 'none'
+  
+  await renderAccountsTable()
+}
+
+async function saveAccounts() {
+  try {
+    // Update accounts from form inputs
+    const accountRows = document.querySelectorAll('.account-row')
+    const updatedAccounts: Account[] = []
+    
+    accountRows.forEach(row => {
+      const accountId = row.getAttribute('data-account-id')
+      const nameInput = row.querySelector('.account-name-input') as HTMLInputElement
+      const typeInput = row.querySelector('.account-type-input') as HTMLSelectElement
+      const balanceInput = row.querySelector('.account-balance-input') as HTMLInputElement
+      const colorInput = row.querySelector('.account-color-input') as HTMLInputElement
+      const statusInput = row.querySelector('.account-status-input') as HTMLSelectElement
+      
+      if (accountId && nameInput && typeInput && balanceInput && colorInput && statusInput) {
+        const name = nameInput.value.trim()
+        if (name) {
+          const accountData: Account = {
+            id: accountId.startsWith('temp-') ? undefined : parseInt(accountId),
+            name,
+            type: typeInput.value as 'checking' | 'savings' | 'credit' | 'investment',
+            initial_balance: parseFloat(balanceInput.value) || 0,
+            color: colorInput.value,
+            status: statusInput.value as 'active' | 'inactive',
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString()
+          }
+          updatedAccounts.push(accountData)
+        }
+      }
+    })
+    
+    // Update global accounts array for validation
+    const tempAccounts = accounts
+    accounts = updatedAccounts.map((account, index) => ({
+      ...account,
+      id: account.id || index + 1
+    }))
+    
+    // Validate balances before saving
+    if (!showBalanceValidationWarning()) {
+      // Restore original accounts if user cancels
+      accounts = tempAccounts
+      return
+    }
+    
+    await exitAccountEditMode()
+    
+    // Save to file
+    await saveAccountsFile()
+    showSuccessMessage('Accounts saved successfully')
+    
+    // Update balance validation display
+    updateBalanceValidationDisplay()
+    
+    // Update transaction forms with new accounts
+    await updateTransactionFormAccounts()
+  } catch (error) {
+    console.error('Error saving accounts:', error)
+    alert('Error saving accounts. Please try again.')
+  }
+}
+
+async function addNewAccount() {
+  if (!editingAccounts) return
+  
+  // Create a temporary new account object
+  const tempId = Date.now()
+  
+  // Add new row to the table directly
+  const accountsTableBodyEl = document.getElementById('accounts-table-body')
+  if (!accountsTableBodyEl) return
+  
+  const newRowHtml = `
+    <div class="account-row" data-account-id="temp-${tempId}">
+      <div class="account-name">
+        <input type="text" class="account-name-input" value="New Account" />
+      </div>
+      <div class="account-type">
+        <select class="account-type-input">
+          <option value="checking" selected>Checking</option>
+          <option value="savings">Savings</option>
+          <option value="credit">Credit Card</option>
+          <option value="investment">Investment</option>
+        </select>
+      </div>
+      <div class="account-initial-balance">
+        <input type="text" class="account-balance-input" value="0" placeholder="0.00" inputmode="decimal" />
+      </div>
+      <div class="account-color">
+        <input type="color" class="account-color-input" value="#2563eb" />
+      </div>
+      <div class="account-status">
+        <select class="account-status-input">
+          <option value="active" selected>Active</option>
+          <option value="inactive">Inactive</option>
+        </select>
+      </div>
+      <div class="account-actions">
+        <button type="button" class="delete-btn" onclick="handleAccountDelete('temp-${tempId}')">🗑️</button>
+      </div>
+    </div>
+  `
+  
+  accountsTableBodyEl.insertAdjacentHTML('beforeend', newRowHtml)
+  
+  // Focus on the new account name input
+  setTimeout(() => {
+    const newRow = document.querySelector(`[data-account-id="temp-${tempId}"]`)
+    const input = newRow?.querySelector('.account-name-input') as HTMLInputElement
+    if (input) {
+      input.focus()
+      input.select()
+    }
+  }, 100)
+}
+
+function removeNewAccountRow(tempId: string) {
+  const row = document.querySelector(`[data-account-id="${tempId}"]`)
+  if (row) {
+    row.remove()
+  }
+}
+
+async function handleAccountDelete(accountId: string) {
+  if (accountId.startsWith('temp-')) {
+    // This is a new account that hasn't been saved yet, just remove the row
+    removeNewAccountRow(accountId)
+  } else {
+    // This is an existing account, remove from array
+    const confirmed = confirm('Are you sure you want to delete this account?')
+    if (confirmed) {
+      accounts = accounts.filter(account => account.id !== parseInt(accountId))
+      await renderAccountsTable()
+    }
+  }
+}
+
+async function cancelAccountEditing() {
+  await exitAccountEditMode()
+}
+
+async function saveAccountsFile(): Promise<boolean> {
+  try {
+    console.log('=== SAVE ACCOUNTS TO FILE START ===')
+    console.log('Storage type:', storageType)
+    console.log('Data storage path:', dataStoragePath)
+    console.log('Accounts to save:', accounts)
+
+    let filePath: string
+    
+    // Both local and Google Drive save to the same location (data/ directory)
+    filePath = await join(dataStoragePath || '', 'accounts.json')
+    
+    // Ensure directory exists
+    const dirPath = dataStoragePath || ''
+    if (!(await exists(dirPath))) {
+      await createDir(dirPath, { recursive: true })
+      console.log('Created directory:', dirPath)
+    }
+
+    // Write to local file
+    const jsonContent = JSON.stringify(accounts, null, 2)
+    await writeTextFile(filePath, jsonContent)
+    console.log(`Successfully saved ${accounts.length} accounts to local file:`, filePath)
+
+    if (storageType === 'googledrive' && googleDriveAuth) {
+      // Google Drive upload functionality would go here
+      // For now, just log that it would upload
+      console.log('Accounts saved locally (Google Drive upload not yet implemented)')
+    }
+
+    console.log('=== SAVE ACCOUNTS TO FILE END ===')
+    return true
+  } catch (error) {
+    console.error('Error in saveAccountsFile:', error)
+    return false
+  }
+}
+
+async function loadAccountsFile(): Promise<Account[]> {
+  try {
+    // Both local and Google Drive load from the same location (data/ directory)
+    const filePath = await join(dataStoragePath || '', 'accounts.json')
+    console.log('Loading accounts from file path:', filePath)
+    console.log('dataStoragePath:', dataStoragePath)
+
+    if (await exists(filePath)) {
+      console.log('Accounts file exists, reading content...')
+      const fileContent = await readTextFile(filePath)
+      const loadedAccounts: Account[] = JSON.parse(fileContent || '[]')
+      console.log(`Loaded ${loadedAccounts.length} accounts from file:`, loadedAccounts.map(a => a.name))
+      return loadedAccounts
+    } else {
+      console.log('No accounts file found at', filePath, ', using default accounts')
+      return getDefaultAccounts()
+    }
+  } catch (error) {
+    console.error('Error loading accounts file:', error)
+    return getDefaultAccounts()
+  }
+}
+
+function getDefaultAccounts(): Account[] {
+  return [
+    { id: 1, name: 'Checking', type: 'checking', initial_balance: 0, color: '#2563eb', status: 'active' },
+    { id: 2, name: 'Savings', type: 'savings', initial_balance: 0, color: '#059669', status: 'active' }
+  ]
+}
+
+/**
+ * Get the color for a specific account by name
+ */
+function getAccountColor(accountName: string): string {
+  const account = accounts.find(acc => acc.name === accountName)
+  return account?.color || '#6b7280' // Default gray if account not found
+}
+
+async function updateTransactionFormAccounts() {
+  const activeAccounts = accounts.filter(account => account.status === 'active')
+  
+  // Update new transaction form
+  const accountSelects = document.querySelectorAll('.account-input')
+  accountSelects.forEach(select => {
+    const selectEl = select as HTMLSelectElement
+    const currentValue = selectEl.value
+    
+    const accountOptions = activeAccounts.length > 0 
+      ? activeAccounts.map(account => 
+          `<option value="${account.name}" ${account.name === currentValue ? 'selected' : ''}>${account.name}</option>`
+        ).join('')
+      : '<option value="" disabled>No accounts available - Please create accounts first</option>'
+    
+    selectEl.innerHTML = '<option value="">Select Account</option>' + accountOptions
+  })
+  
+  // Apply account colors to dropdowns
+  addAccountColorListeners()
+}
+
+// ============================================================================
+// BALANCE VALIDATION FUNCTIONS
+// ============================================================================
+
+/**
+ * Calculate total initial balance from all accounts
+ */
+function calculateTotalAccountBalance(): number {
+  return accounts.reduce((total, account) => {
+    return total + (account.initial_balance || 0)
+  }, 0)
+}
+
+/**
+ * Calculate total initial budget from all categories
+ */
+function calculateTotalCategoryBudget(): number {
+  return categories.reduce((total, category) => {
+    return total + (category.initialBudget || 0)
+  }, 0)
+}
+
+/**
+ * Validate that account balances match category budgets
+ */
+function validateBalances(): { isValid: boolean; accountTotal: number; categoryTotal: number; difference: number } {
+  const accountTotal = calculateTotalAccountBalance()
+  const categoryTotal = calculateTotalCategoryBudget()
+  const difference = accountTotal - categoryTotal
+  const isValid = Math.abs(difference) < 0.01 // Allow for small floating point differences
+  
+  return {
+    isValid,
+    accountTotal,
+    categoryTotal,
+    difference
+  }
+}
+
+/**
+ * Update the balance validation display in the Settings page
+ */
+function updateBalanceValidationDisplay() {
+  const validationStatusEl = document.getElementById('balance-validation-status')
+  
+  if (!validationStatusEl) {
+    return
+  }
+  
+  const validation = validateBalances()
+  
+  // Update the status indicator
+  const statusIndicator = validationStatusEl.querySelector('.status-indicator')
+  const statusIcon = statusIndicator?.querySelector('.status-icon')
+  const statusText = statusIndicator?.querySelector('.status-text')
+  
+  if (!statusIcon || !statusText) return
+  
+  // Remove existing classes
+  validationStatusEl.classList.remove('success', 'error', 'warning')
+  
+  if (validation.isValid) {
+    validationStatusEl.classList.add('success')
+    statusIcon.textContent = '✅'
+    statusText.textContent = 'Account balances match category budgets perfectly!'
+  } else {
+    validationStatusEl.classList.add('error')
+    statusIcon.textContent = '❌'
+    if (validation.difference > 0) {
+      statusText.textContent = `Account balances exceed category budgets by ${formatCurrency(validation.difference)}`
+    } else {
+      statusText.textContent = `Category budgets exceed account balances by ${formatCurrency(Math.abs(validation.difference))}`
+    }
+  }
+}
+
+/**
+ * Show balance validation warning when saving accounts or categories
+ */
+function showBalanceValidationWarning(): boolean {
+  const validation = validateBalances()
+  
+  if (!validation.isValid) {
+    const message = validation.difference > 0 
+      ? `Warning: Your account balances (${formatCurrency(validation.accountTotal)}) exceed your category budgets (${formatCurrency(validation.categoryTotal)}) by ${formatCurrency(validation.difference)}.\n\nThis means you have more money than you've allocated to categories. Please adjust your category budgets or account balances to match.\n\nDo you want to save anyway?`
+      : `Warning: Your category budgets (${formatCurrency(validation.categoryTotal)}) exceed your account balances (${formatCurrency(validation.accountTotal)}) by ${formatCurrency(Math.abs(validation.difference))}.\n\nThis means you've budgeted more money than you actually have. Please adjust your category budgets or account balances to match.\n\nDo you want to save anyway?`
+    
+    return confirm(message)
+  }
+  
+  return true
 }
 
 // Budget data structure
@@ -3091,12 +3734,23 @@ async function populateMonthSelector() {
 }
 
 function calculateTransactionSaldo(category: string, month: string): number {
-  return transactions
+  const cacheKey = `${category}-${month}-saldo`
+  
+  // Return cached result if available and valid
+  if (performanceCache.isValid() && performanceCache.transactionSums.has(cacheKey)) {
+    return performanceCache.transactionSums.get(cacheKey)!
+  }
+  
+  const result = transactions
     .filter(t => t.category === category && t.month === month)
     .reduce((sum, t) => {
       // Income adds to balance, expenses subtract from balance
       return sum + (t.transaction_type === 'income' ? t.amount : -t.amount)
     }, 0)
+  
+  // Cache the result
+  performanceCache.transactionSums.set(cacheKey, result)
+  return result
 }
 
 /**
@@ -3140,6 +3794,13 @@ function getInitialBalanceForMonth(categoryName: string, month: string): number 
  * Formula: Initial Balance + Distribution + Transactions
  */
 function calculateCurrentBalance(categoryName: string, month: string): number {
+  const cacheKey = `${categoryName}-${month}-current`
+  
+  // Return cached result if available and valid
+  if (performanceCache.isValid() && performanceCache.balanceCalculations.has(cacheKey)) {
+    return performanceCache.balanceCalculations.get(cacheKey)!
+  }
+  
   // Get the initial balance for this month
   const initialBalance = getInitialBalanceForMonth(categoryName, month)
   
@@ -3150,7 +3811,11 @@ function calculateCurrentBalance(categoryName: string, month: string): number {
   // Get transactions for this month
   const transactionSaldo = calculateTransactionSaldo(categoryName, month)
   
-  return initialBalance + distribution + transactionSaldo
+  const result = initialBalance + distribution + transactionSaldo
+  
+  // Cache the result
+  performanceCache.balanceCalculations.set(cacheKey, result)
+  return result
 }
 
 /**
@@ -3228,6 +3893,11 @@ async function fixBalanceDiscrepancies(month: string): Promise<void> {
  * New format: { initial_balance: number, current_balance: number }
  */
 async function migrateBalanceData(): Promise<void> {
+  // Skip if migration already completed this session
+  if (migrationCompleted) {
+    return
+  }
+  
   console.log('Checking if balance data migration is needed...')
   
   let migrationNeeded = false
@@ -3242,6 +3912,7 @@ async function migrateBalanceData(): Promise<void> {
   
   if (!migrationNeeded) {
     console.log('No balance data migration needed')
+    migrationCompleted = true
     return
   }
   
@@ -3265,6 +3936,7 @@ async function migrateBalanceData(): Promise<void> {
   }
   
   await saveCategoryBalances()
+  migrationCompleted = true
   console.log('Balance data migration completed')
 }
 
@@ -3351,14 +4023,15 @@ async function renderBudgetOverview(selectedMonth: string) {
 
   budgetOverviewEl.style.display = 'block'
   
-  // Ensure balance data migration is completed and fix any discrepancies
-  await migrateBalanceData()
-  await fixBalanceDiscrepancies(selectedMonth)
+  // Check if we have cached HTML for this month
+  const cacheKey = `budget-${selectedMonth}`
+  if (performanceCache.isValid() && performanceCache.budgetOverviews.has(cacheKey)) {
+    budgetTableBodyEl.innerHTML = performanceCache.budgetOverviews.get(cacheKey)!
+    console.log(`Used cached budget overview for ${selectedMonth}`)
+    return
+  }
   
-  console.log(`=== BUDGET OVERVIEW DEBUG ===`)
-  console.log(`Selected month: ${selectedMonth}`)
-  console.log(`Total categories available: ${categories.length}`)
-  console.log(`Categories:`, categories)
+  console.log(`Calculating budget overview for ${selectedMonth} (not cached)`)
   
   // Clear any existing summary
   const existingSummary = budgetOverviewEl.querySelector('.budget-summary')
@@ -3366,58 +4039,78 @@ async function renderBudgetOverview(selectedMonth: string) {
     existingSummary.remove()
   }
   
-  // Filter categories that are valid for the selected month
+  // Filter categories that are valid for the selected month (with caching)
   const validCategories = categories.filter(category => {
-    // Check if category is active
-    if (!category.enabled) return false
+    const validationKey = `${category.name}-${selectedMonth}-valid`
     
-    // Category must be available (selectedMonth >= availableFrom)
-    if (category.availableFrom && selectedMonth < category.availableFrom) {
-      return false
+    // Check cache first
+    if (performanceCache.categoryValidation.has(validationKey)) {
+      return performanceCache.categoryValidation.get(validationKey)!
     }
     
-    // available_until not implemented in legacy Category interface
-    // if (category.availableUntil && selectedMonth > category.availableUntil) {
-    //   return false
-    // }
+    // Calculate validation result
+    let isValid = true
     
-    // If we get here, the category is valid for this month
-    return true
+    // Check if category is active
+    if (!category.enabled) isValid = false
+    
+    // Category must be available (selectedMonth >= availableFrom)
+    if (isValid && category.availableFrom && selectedMonth < category.availableFrom) {
+      isValid = false
+    }
+    
+    // Cache the result
+    performanceCache.categoryValidation.set(validationKey, isValid)
+    return isValid
   })
   
   console.log(`Budget Overview: Found ${validCategories.length} valid categories for ${selectedMonth}:`, validCategories.map(c => c.name))
   
-  // Get dynamic distributions based on salary for this month
+  // Pre-compute all expensive calculations to avoid repeated work
   const monthlyDistributions = getMonthlyDistributions(selectedMonth)
+  const monthlySalary = calculateMonthlySalary(selectedMonth)
+  const totalDistribution = Object.values(monthlyDistributions).reduce((sum, amount) => sum + amount, 0)
   
-  budgetTableBodyEl.innerHTML = validCategories.map(category => {
-      // Get the balance data using the new data model
+  // Pre-compute balance data for all valid categories in batch
+  const categoryBalanceData = new Map<string, {
+    initialBalance: number
+    currentBalance: number
+    distribution: number
+    transactionSaldo: number
+  }>()
+  
+  validCategories.forEach(category => {
     const balanceData = getCategoryBalance(category.name, selectedMonth)
-    
-    // Use stored values if available, otherwise calculate them
-    const initialBudget = balanceData ? balanceData.initial_balance : getInitialBalanceForMonth(category.name, selectedMonth)
-    const currentBalance = balanceData ? balanceData.current_balance : calculateCurrentBalance(category.name, selectedMonth)
-    
-    // Get distribution and transactions for display
     const categoryDistribution = getCategoryDistribution(category.name, selectedMonth)
-    const distribution = categoryDistribution ? categoryDistribution.allocation : 0
-    const transactionSaldo = calculateTransactionSaldo(category.name, selectedMonth)
+    
+    categoryBalanceData.set(category.name, {
+      initialBalance: balanceData ? balanceData.initial_balance : getInitialBalanceForMonth(category.name, selectedMonth),
+      currentBalance: balanceData ? balanceData.current_balance : calculateCurrentBalance(category.name, selectedMonth),
+      distribution: categoryDistribution ? categoryDistribution.allocation : 0,
+      transactionSaldo: calculateTransactionSaldo(category.name, selectedMonth)
+    })
+  })
+  
+  const budgetHTML = validCategories.map(category => {
+    // Use pre-computed balance data for maximum performance
+    const data = categoryBalanceData.get(category.name)!
     
     return `
       <div class="budget-row">
         <div class="category">${category.name}</div>
-        <div class="initial-budget">${formatCurrency(initialBudget)}</div>
-        <div class="distribution">${formatCurrency(distribution)}</div>
-        <div class="transactions">${formatCurrency(transactionSaldo)}</div>
-        <div class="current-balance ${currentBalance < 0 ? 'negative' : 'positive'}">${formatCurrency(currentBalance)}</div>
+        <div class="initial-budget">${formatCurrency(data.initialBalance)}</div>
+        <div class="distribution">${formatCurrency(data.distribution)}</div>
+        <div class="transactions">${formatCurrency(data.transactionSaldo)}</div>
+        <div class="current-balance ${data.currentBalance < 0 ? 'negative' : 'positive'}">${formatCurrency(data.currentBalance)}</div>
       </div>
     `
   }).join('')
   
-  // Add summary information showing salary vs distribution total
-  const monthlySalary = calculateMonthlySalary(selectedMonth)
-  const totalDistribution = Object.values(monthlyDistributions).reduce((sum, amount) => sum + amount, 0)
+  // Cache the generated HTML for fast month switching
+  performanceCache.budgetOverviews.set(cacheKey, budgetHTML)
+  budgetTableBodyEl.innerHTML = budgetHTML
   
+  // Add summary information showing salary vs distribution total (using pre-computed values)
   if (monthlySalary > 0) {
     const summaryEl = document.createElement('div')
     summaryEl.className = 'budget-summary'
@@ -3430,6 +4123,8 @@ async function renderBudgetOverview(selectedMonth: string) {
     `
     budgetOverviewEl.appendChild(summaryEl)
   }
+  
+  console.log(`Budget overview cached for ${selectedMonth}`)
 }
 
 /**
@@ -3543,6 +4238,10 @@ async function finishDistributionEditing(month: string) {
   if (Object.keys(distributionChanges).length > 0) {
     await saveCategoryDistributions()
     await saveCategoryBalances()
+    
+    // Invalidate cache since balance data has changed
+    performanceCache.invalidate()
+    
     console.log(`Saved ${Object.keys(distributionChanges).length} distribution changes`)
   }
   
@@ -3604,11 +4303,9 @@ function editTransaction(transactionId: string) {
       ${editCategoryOptions}
     </select>
     <select class="edit-account">
-      <option value="Checking Account" ${transaction.account === 'Checking Account' ? 'selected' : ''}>Checking Account</option>
-      <option value="Savings Account" ${transaction.account === 'Savings Account' ? 'selected' : ''}>Savings Account</option>
-      <option value="Credit Card" ${transaction.account === 'Credit Card' ? 'selected' : ''}>Credit Card</option>
-      <option value="Cash" ${transaction.account === 'Cash' ? 'selected' : ''}>Cash</option>
-      <option value="Investment Account" ${transaction.account === 'Investment Account' ? 'selected' : ''}>Investment Account</option>
+      ${accounts.filter(account => account.status === 'active').map(account => 
+        `<option value="${account.name}" ${transaction.account === account.name ? 'selected' : ''}>${account.name}</option>`
+      ).join('')}
     </select>
     <select class="edit-type">
       <option value="expense" ${transaction.transaction_type === 'expense' ? 'selected' : ''}>Expense</option>

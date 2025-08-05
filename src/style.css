@@ -463,10 +463,18 @@
   color: var(--warning-600);
 }
 
-.transaction-row .category,
-.transaction-row .account {
+.transaction-row .category {
   font-size: 0.75rem;
   color: #000000 !important;
+  padding: 0.125rem 0.5rem;
+  background: #f1f5f9 !important;
+  border-radius: 12px;
+  text-align: center;
+  font-weight: 500;
+}
+
+.transaction-row .account {
+  font-size: 0.75rem;
   padding: 0.125rem 0.5rem;
   background: #f1f5f9 !important;
   border-radius: 12px;
@@ -1051,9 +1059,9 @@ input.category-budget-input {
   border-radius: 6px;
   font-size: 0.875rem;
   background: #ffffff !important;
-  color: #2d2d2d !important;
+  color: #1e293b !important;
   transition: all 0.2s ease;
-  -webkit-text-fill-color: #2d2d2d !important;
+  -webkit-text-fill-color: #1e293b !important;
 }
 
 .category-row .category-available-from-input:disabled,
@@ -1168,6 +1176,211 @@ input:disabled + .toggle-slider:before {
   text-align: center;
   color: var(--gray-500);
   font-style: italic;
+}
+
+/* Account Management Styling */
+.accounts-container {
+  background: #ffffff !important;
+  border-radius: 0;
+  box-shadow: none;
+  border: none;
+  padding: 0;
+  color: #000000 !important;
+}
+
+.accounts-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1rem;
+}
+
+.account-actions {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.accounts-table-container {
+  background: #ffffff !important;
+  border-radius: 12px;
+  overflow: hidden;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+  border: 1px solid rgba(0, 0, 0, 0.06);
+  color: #000000 !important;
+}
+
+.accounts-table-header {
+  display: grid;
+  grid-template-columns: 2fr 1.2fr 1.2fr 1fr 1fr 0.8fr;
+  gap: 1rem;
+  padding: 1rem;
+  background: #f8f9fa !important;
+  border-bottom: 2px solid var(--gray-200);
+  font-weight: 700;
+  font-size: 0.875rem;
+  color: #000000 !important;
+  text-transform: uppercase;
+  letter-spacing: 0.025em;
+}
+
+.account-row {
+  display: grid;
+  grid-template-columns: 2fr 1.2fr 1.2fr 1fr 1fr 0.8fr;
+  gap: 1rem;
+  padding: 1rem;
+  border-bottom: 1px solid var(--gray-200);
+  background: #ffffff !important;
+  color: #000000 !important;
+  transition: all 0.2s ease;
+}
+
+.account-row:hover {
+  background: #f8f9fa !important;
+}
+
+.account-row:last-child {
+  border-bottom: none;
+}
+
+/* Account Input Fields */
+.account-row .account-name-input,
+.account-row .account-type-input,
+.account-row .account-balance-input,
+.account-row .account-status-input {
+  width: 100%;
+  padding: 0.5rem;
+  border: 1px solid var(--gray-300);
+  border-radius: 6px;
+  font-size: 0.875rem;
+  background: #ffffff !important;
+  color: #1e293b !important;
+  transition: all 0.2s ease;
+  -webkit-text-fill-color: #1e293b !important;
+}
+
+.account-row .account-name-input:disabled,
+.account-row .account-type-input:disabled,
+.account-row .account-balance-input:disabled,
+.account-row .account-status-input:disabled {
+  background: #f8f8f8 !important;
+  color: #666666 !important;
+  -webkit-text-fill-color: #666666 !important;
+  border-color: var(--gray-200);
+  cursor: not-allowed;
+}
+
+.account-row .account-name-input:focus:not(:disabled),
+.account-row .account-type-input:focus:not(:disabled),
+.account-row .account-balance-input:focus:not(:disabled),
+.account-row .account-status-input:focus:not(:disabled) {
+  outline: none;
+  border-color: var(--primary-500);
+  box-shadow: 0 0 0 2px rgba(14, 165, 233, 0.1);
+}
+
+/* Account Color Input */
+.account-color {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.account-color-input {
+  width: 40px;
+  height: 32px;
+  border: 1px solid var(--gray-300);
+  border-radius: 6px;
+  cursor: pointer;
+  background: none;
+  padding: 0;
+}
+
+.account-color-input:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.color-preview {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  border: 2px solid #ffffff;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.1);
+  flex-shrink: 0;
+}
+
+.account-actions {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.delete-btn {
+  padding: 0.25rem 0.5rem;
+  background: linear-gradient(135deg, var(--error-500), var(--error-600));
+  color: white;
+  border: none;
+  border-radius: 4px;
+  font-size: 0.875rem;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.delete-btn:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 2px 8px rgba(239, 68, 68, 0.3);
+}
+
+/* Balance Validation Styling */
+.validation-status {
+  padding: 0.75rem 1rem;
+  border-radius: 8px;
+  text-align: center;
+  margin-bottom: 1.5rem;
+  border: 2px solid transparent;
+}
+
+.validation-status.success {
+  background: rgba(16, 185, 129, 0.1);
+  border-color: rgba(16, 185, 129, 0.4);
+}
+
+.validation-status.error {
+  background: rgba(239, 68, 68, 0.1);
+  border-color: rgba(239, 68, 68, 0.4);
+}
+
+.validation-status.warning {
+  background: rgba(245, 158, 11, 0.1);
+  border-color: rgba(245, 158, 11, 0.4);
+}
+
+.status-indicator {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+}
+
+.status-icon {
+  font-size: 1.25rem;
+}
+
+.status-text {
+  font-weight: 500;
+  font-size: 0.9rem;
+}
+
+.validation-status.success .status-text {
+  color: #10b981;
+}
+
+.validation-status.error .status-text {
+  color: #ef4444;
+}
+
+.validation-status.warning .status-text {
+  color: #f59e0b;
 }
 
 /* Data Location Selection Modal */
@@ -1606,10 +1819,13 @@ input:disabled + .toggle-slider:before {
   }
 
   .transaction-row .category,
-  .transaction-row .account,
   .transaction-row .type {
     background: #f1f5f9 !important;
     color: #000000 !important;
+  }
+  
+  .transaction-row .account {
+    background: #f1f5f9 !important;
   }
 
   /* Dark mode categories table styling */
