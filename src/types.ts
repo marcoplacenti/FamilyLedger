@@ -100,12 +100,14 @@ export interface Budget {
 
 /**
  * Category Balance interface for tracking category balances per month
+ * New model: tracks both initial balance (start of month) and current balance (end of month)
  */
 export interface CategoryBalance {
   id?: number;
   category_name: string;                              // Name of the category
   month: string;                                      // Format: "YYYY-MM"
-  balance: number;                                    // Current balance for this category in this month
+  initial_balance: number;                            // Balance at start of month (from previous month's current_balance or category's initialBudget)
+  current_balance: number;                            // Balance at end of month (initial_balance + distribution + transactions)
   created_at?: string;
   updated_at?: string;
 }

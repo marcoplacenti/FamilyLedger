@@ -39,7 +39,7 @@ import {
 } from './database/index';
 
 // TYPE IMPORTS
-import { Category, CategoryBalance, CategoryDistribution } from './types';
+import { Category as DatabaseCategory, CategoryBalance, CategoryDistribution } from './types';
 
 // ============================================================================
 // DATA STRUCTURES & INTERFACES
@@ -70,6 +70,79 @@ let transactions: Transaction[] = []                  // All transactions in mem
 // ============================================================================
 // UTILITY FUNCTIONS
 // ============================================================================
+
+/**
+ * Format amount input to 2 decimal places
+ * Accepts both dot and comma as decimal separators
+ * @param value - The input value to format
+ * @returns Formatted value with 2 decimal places
+ */
+function formatAmountInput(value: string): string {
+  if (!value || value.trim() === '') return ''
+  
+  // Replace comma with dot for consistent decimal handling
+  let normalizedValue = value.replace(',', '.')
+  
+  // Remove any non-numeric characters except dots
+  normalizedValue = normalizedValue.replace(/[^0-9.]/g, '')
+  
+  // Handle multiple dots - keep only the first one
+  const parts = normalizedValue.split('.')
+  if (parts.length > 2) {
+    normalizedValue = parts[0] + '.' + parts.slice(1).join('')
+  }
+  
+  // Parse as float and format to 2 decimal places
+  const numericValue = parseFloat(normalizedValue)
+  
+  // If it's not a valid number, return empty string
+  if (isNaN(numericValue)) return ''
+  
+  // Format to 2 decimal places
+  return numericValue.toFixed(2)
+}
+
+/**
+ * Setup amount field formatting for transaction forms
+ * Uses event delegation to handle dynamically added form rows
+ */
+function setupAmountFieldFormatting() {
+  // Use event delegation on the form container to handle dynamically added rows
+  const formContainer = document.getElementById('transaction-form-rows')
+  if (!formContainer) return
+  
+  // Handle blur event for amount formatting
+  formContainer.addEventListener('blur', (e) => {
+    const target = e.target as HTMLElement
+    if (target && target.classList.contains('amount-input')) {
+      const amountInput = target as HTMLInputElement
+      const formattedValue = formatAmountInput(amountInput.value)
+      amountInput.value = formattedValue
+    }
+  }, true) // Use capture phase to ensure we catch the event
+  
+  // Handle input event for real-time validation (optional - restrict invalid characters)
+  formContainer.addEventListener('input', (e) => {
+    const target = e.target as HTMLElement
+    if (target && target.classList.contains('amount-input')) {
+      const amountInput = target as HTMLInputElement
+      let value = amountInput.value
+      
+      // Allow only numbers, dots, and commas
+      const validChars = /[^0-9.,]/g
+      if (validChars.test(value)) {
+        // Remove invalid characters but preserve cursor position
+        const cursorPos = amountInput.selectionStart || 0
+        const cleanValue = value.replace(validChars, '')
+        amountInput.value = cleanValue
+        
+        // Restore cursor position
+        const newCursorPos = Math.max(0, cursorPos - (value.length - cleanValue.length))
+        amountInput.setSelectionRange(newCursorPos, newCursorPos)
+      }
+    }
+  })
+}
 
 /**
  * Generates a unique ID using timestamp and random number
@@ -216,7 +289,7 @@ function createFormRow(): string {
   const currentMonth = new Date()
   const monthValue = `${currentMonth.getFullYear()}-${String(currentMonth.getMonth() + 1).padStart(2, '0')}`
   
-  // Get only enabled categories for the dropdown
+  // Get only active categories for the dropdown
   // This ensures users can only select categories that are currently active
   const enabledCategories = categories.filter(cat => cat.enabled)
   const categoryOptions = enabledCategories.length > 0 
@@ -331,7 +404,7 @@ async function submitAllTransactions() {
   // Update the UI immediately to show the new transactions
   updateDashboard()
   renderRecentTransactions()
-  populateMonthSelector()
+  await populateMonthSelector()
   await loadCategoriesIntoGlobal()
   
   // Clear and reset the form immediately for better UX
@@ -563,17 +636,41 @@ async function saveAllDataToFile(): Promise<boolean> {
   try {
     console.log('=== SAVE ALL DATA TO FILE START ===')
     
-    // Save both transactions and categories
+    // Save all data files
     const transactionsSuccess = await saveTransactionsToFile()
     const categoriesSuccess = await saveCategoriesFile()
     
-    if (transactionsSuccess && categoriesSuccess) {
+    // Save category balances and distributions
+    let balancesSuccess = true
+    let distributionsSuccess = true
+    
+    try {
+      await saveCategoryBalances()
+      console.log('✓ Category balances saved')
+    } catch (error) {
+      console.error('❌ Failed to save category balances:', error)
+      balancesSuccess = false
+    }
+    
+    try {
+      await saveCategoryDistributions()
+      console.log('✓ Category distributions saved')
+    } catch (error) {
+      console.error('❌ Failed to save category distributions:', error)
+      distributionsSuccess = false
+    }
+    
+    const allSuccess = transactionsSuccess && categoriesSuccess && balancesSuccess && distributionsSuccess
+    
+    if (allSuccess) {
       console.log('✓ All data saved successfully')
       return true
     } else {
       console.error('❌ Some data failed to save:', {
         transactions: transactionsSuccess,
-        categories: categoriesSuccess
+        categories: categoriesSuccess,
+        balances: balancesSuccess,
+        distributions: distributionsSuccess
       })
       return false
     }
@@ -705,7 +802,7 @@ async function loadTransactions() {
     transactions.splice(0, transactions.length, ...loadedTransactions)
     updateDashboard()
     renderRecentTransactions()
-    populateMonthSelector()
+    await populateMonthSelector()
     await loadCategoriesIntoGlobal()
     
     // Initialize distributions for existing months if distributions.json doesn't exist
@@ -721,6 +818,9 @@ async function loadTransactions() {
 
 function setupEventListeners() {
   console.log('Setting up all event listeners...')
+  
+  // Setup amount field formatting for transaction forms
+  setupAmountFieldFormatting()
   
   // Navigation
   document.querySelectorAll('.nav-btn').forEach(btn => {
@@ -771,11 +871,11 @@ function setupEventListeners() {
   // Budget functionality
   const budgetMonthSelectEl = document.getElementById('budget-month-select')
   if (budgetMonthSelectEl) {
-    budgetMonthSelectEl.addEventListener('change', (e) => {
+    budgetMonthSelectEl.addEventListener('change', async (e) => {
       const target = e.target as HTMLSelectElement
       const selectedMonth = target.value
       if (selectedMonth) {
-        renderBudgetOverview(selectedMonth)
+        await renderBudgetOverview(selectedMonth)
       } else {
         const budgetOverviewEl = document.getElementById('budget-overview')
         if (budgetOverviewEl) budgetOverviewEl.style.display = 'none'
@@ -1037,7 +1137,6 @@ window.addEventListener('DOMContentLoaded', async () => {
 
     // STEP 3: Initialize core app components
     // These run regardless of first launch or not
-    addFormRow()              // Initialize with one empty form row for new transactions
     await renderCategoriesTable()   // Initialize categories table display
     updateTransactionFormCategories() // Initialize transaction form categories
 
@@ -1172,7 +1271,14 @@ async function loadCategoriesIntoGlobal(): Promise<void> {
   try {
     const result = await getAllCategories()
     if (result.success) {
-      categories = result.data || []
+      // Transform database categories to local format
+      categories = (result.data || []).map(dbCat => ({
+        id: dbCat.id?.toString() || '',
+        name: dbCat.name,
+        enabled: dbCat.status === 'active',
+        availableFrom: dbCat.available_from || '',
+        initialBudget: dbCat.initial_budget || 0
+      }))
       console.log(`Loaded ${categories.length} categories into global variable`)
     } else {
       console.error('Failed to load categories into global variable:', result.error)
@@ -1211,6 +1317,9 @@ async function loadCategoryBalances(): Promise<void> {
       const content = await readTextFile(balancesPath)
       categoryBalances = JSON.parse(content || '[]')
       console.log(`Loaded ${categoryBalances.length} category balances`)
+      
+      // Migrate data from old format if needed
+      await migrateBalanceData()
     } else {
       categoryBalances = []
       console.log('No category balances file found, starting fresh')
@@ -1226,10 +1335,28 @@ async function loadCategoryBalances(): Promise<void> {
  */
 async function saveCategoryBalances(): Promise<void> {
   try {
-    const balancesPath = await getCategoryBalancesPath()
     const content = JSON.stringify(categoryBalances, null, 2)
-    await writeTextFile(balancesPath, content)
-    console.log(`Saved ${categoryBalances.length} category balances`)
+    
+    if (storageType === 'googledrive') {
+      console.log('Saving category balances to Google Drive...')
+      const success = await saveToGoogleDrive('category_balance.json', content)
+      
+      if (success) {
+        // Also save to local cache if we have a path
+        if (dataStoragePath) {
+          const cacheFile = await join(dataStoragePath, 'category_balance.json')
+          await writeTextFile(cacheFile, content)
+        }
+        console.log(`✓ Saved ${categoryBalances.length} category balances to Google Drive`)
+      } else {
+        throw new Error('Failed to save category balances to Google Drive')
+      }
+    } else {
+      // Local storage
+      const balancesPath = await getCategoryBalancesPath()
+      await writeTextFile(balancesPath, content)
+      console.log(`✓ Saved ${categoryBalances.length} category balances locally`)
+    }
   } catch (error) {
     console.error('Error saving category balances:', error)
     throw error
@@ -1272,10 +1399,28 @@ async function loadCategoryDistributions(): Promise<void> {
  */
 async function saveCategoryDistributions(): Promise<void> {
   try {
-    const distributionsPath = await getCategoryDistributionsPath()
     const content = JSON.stringify(categoryDistributions, null, 2)
-    await writeTextFile(distributionsPath, content)
-    console.log(`Saved ${categoryDistributions.length} category distributions`)
+    
+    if (storageType === 'googledrive') {
+      console.log('Saving category distributions to Google Drive...')
+      const success = await saveToGoogleDrive('distributions.json', content)
+      
+      if (success) {
+        // Also save to local cache if we have a path
+        if (dataStoragePath) {
+          const cacheFile = await join(dataStoragePath, 'distributions.json')
+          await writeTextFile(cacheFile, content)
+        }
+        console.log(`✓ Saved ${categoryDistributions.length} category distributions to Google Drive`)
+      } else {
+        throw new Error('Failed to save category distributions to Google Drive')
+      }
+    } else {
+      // Local storage
+      const distributionsPath = await getCategoryDistributionsPath()
+      await writeTextFile(distributionsPath, content)
+      console.log(`✓ Saved ${categoryDistributions.length} category distributions locally`)
+    }
   } catch (error) {
     console.error('Error saving category distributions:', error)
     throw error
@@ -1294,19 +1439,25 @@ function getCategoryBalance(categoryName: string, month: string): CategoryBalanc
 /**
  * Set or update category balance for a specific category and month
  */
-function setCategoryBalance(categoryName: string, month: string, balance: number): void {
+/**
+ * Set or update category balance for a specific category and month
+ * Now maintains both initial_balance and current_balance
+ */
+function setCategoryBalance(categoryName: string, month: string, initialBalance: number, currentBalance: number): void {
   const existingBalance = getCategoryBalance(categoryName, month)
   const now = new Date().toISOString()
   
   if (existingBalance) {
-    existingBalance.balance = balance
+    existingBalance.initial_balance = initialBalance
+    existingBalance.current_balance = currentBalance
     existingBalance.updated_at = now
   } else {
     const newBalance: CategoryBalance = {
       id: categoryBalances.length + 1,
       category_name: categoryName,
       month: month,
-      balance: balance,
+      initial_balance: initialBalance,
+      current_balance: currentBalance,
       created_at: now,
       updated_at: now
     }
@@ -1319,16 +1470,20 @@ function setCategoryBalance(categoryName: string, month: string, balance: number
  * Sets the balance to the initial_budget for the category's available_from month
  */
 async function initializeCategoryBalance(category: Category): Promise<void> {
-  if (!category.available_from || category.initial_budget === undefined) {
+  if (!category.availableFrom || category.initialBudget === undefined) {
     console.log(`Skipping balance initialization for category "${category.name}" - missing available_from or initial_budget`)
     return
   }
   
-  const month = category.available_from
-  const initialBalance = category.initial_budget
+  const month = category.availableFrom
+  const initialBalance = category.initialBudget
   
-  console.log(`Initializing balance for category "${category.name}" in month ${month} with balance ${initialBalance}`)
-  setCategoryBalance(category.name, month, initialBalance)
+  // For the first month, initial_balance = category's initialBudget
+  // current_balance = initial_balance + distribution + transactions
+  const currentBalance = calculateCurrentBalance(category.name, month)
+  
+  console.log(`Initializing balance for category "${category.name}" in month ${month}: initial=${initialBalance}, current=${currentBalance}`)
+  setCategoryBalance(category.name, month, initialBalance, currentBalance)
   await saveCategoryBalances()
 }
 
@@ -1345,33 +1500,40 @@ async function initializeAllCategoriesForMonth(newMonth: string): Promise<void> 
   
   for (const category of categories) {
     // Check if category is active and should be available in this month
-    if (category.status !== 'active') continue
+    if (!category.enabled) continue
     
     // Check if the category is available in this month
-    if (category.available_from && newMonth < category.available_from) continue
-    if (category.available_until && newMonth > category.available_until) continue
+    if (category.availableFrom && newMonth < category.availableFrom) continue
     
     // Check if we already have a balance for this category in this month
     const existingBalance = getCategoryBalance(category.name, newMonth)
     if (existingBalance) {
-      console.log(`Category "${category.name}" already has balance for ${newMonth}: ${existingBalance.balance}`)
+      console.log(`Category "${category.name}" already has balance for ${newMonth}: initial=${existingBalance.initial_balance}, current=${existingBalance.current_balance}`)
       continue
     }
     
-    // Get the balance from the previous month, or use initial budget if no previous balance
-    let balanceToCarryForward = category.initial_budget || 0
+    // For new month initialization:
+    // 1. initial_balance = previous month's current_balance (or category's initialBudget for first month)
+    // 2. current_balance = previous month's current_balance (will be updated as transactions/distributions are processed)
     
-    if (previousMonth) {
-      const previousBalance = getCategoryBalance(category.name, previousMonth)
-      if (previousBalance) {
-        balanceToCarryForward = previousBalance.balance
-        console.log(`Carrying forward balance for "${category.name}" from ${previousMonth}: ${balanceToCarryForward}`)
+    const initialBalance = getInitialBalanceForMonth(category.name, newMonth)
+    let currentBalance: number
+    
+    if (newMonth === category.availableFrom) {
+      // First month: current_balance starts as initial_balance
+      currentBalance = initialBalance
+    } else {
+      // Subsequent months: current_balance starts as previous month's current_balance
+      if (previousMonth) {
+        const previousBalance = getCategoryBalance(category.name, previousMonth)
+        currentBalance = previousBalance ? previousBalance.current_balance : initialBalance
       } else {
-        console.log(`No previous balance found for "${category.name}", using initial budget: ${balanceToCarryForward}`)
+        currentBalance = initialBalance
       }
     }
     
-    setCategoryBalance(category.name, newMonth, balanceToCarryForward)
+    setCategoryBalance(category.name, newMonth, initialBalance, currentBalance)
+    console.log(`Initialized "${category.name}" for ${newMonth}: initial=${initialBalance}, current=${currentBalance} (before transactions/distributions)`)
   }
   
   await saveCategoryBalances()
@@ -1419,24 +1581,22 @@ async function updateCategoryBalanceForTransaction(
     await initializeAllCategoriesForMonth(month)
   }
   
-  // Get current balance
-  let currentBalance = getCategoryBalance(categoryName, month)
-  if (!currentBalance) {
+  // Check if balance exists for this category/month
+  let existingBalance = getCategoryBalance(categoryName, month)
+  if (!existingBalance) {
     // This shouldn't happen if initializeAllCategoriesForMonth worked correctly
-    console.warn(`No balance found for category "${categoryName}" in ${month}, creating with 0 balance`)
-    const category = categories.find(cat => cat.name === categoryName)
-    const initialBalance = category?.initial_budget || 0
-    setCategoryBalance(categoryName, month, initialBalance)
-    currentBalance = getCategoryBalance(categoryName, month)
+    console.warn(`No balance found for category "${categoryName}" in ${month}, initializing now`)
+    calculateAndSetBalances(categoryName, month)
+    existingBalance = getCategoryBalance(categoryName, month)
   }
   
-  if (currentBalance) {
-    // Update balance: income increases balance, expenses decrease balance
-    const balanceChange = transactionType === 'income' ? amount : -amount
-    const newBalance = currentBalance.balance + balanceChange
+  if (existingBalance) {
+    // Recalculate both initial and current balance using the new data model
+    const initialBalance = getInitialBalanceForMonth(categoryName, month)
+    const currentBalance = calculateCurrentBalance(categoryName, month)
     
-    console.log(`Category "${categoryName}" balance change: ${currentBalance.balance} + ${balanceChange} = ${newBalance}`)
-    setCategoryBalance(categoryName, month, newBalance)
+    console.log(`Category "${categoryName}" updated balances: initial=${initialBalance}, current=${currentBalance}`)
+    setCategoryBalance(categoryName, month, initialBalance, currentBalance)
     await saveCategoryBalances()
   }
 }
@@ -1482,13 +1642,13 @@ async function initializeDistributionsForMonth(month: string): Promise<void> {
   // Get all active categories
   const activeCategories = categories.filter(category => {
     // Check if category is active
-    if (category.status !== 'active') return false
+    if (!category.enabled) return false
     
     // Category must be available (month >= available_from)
-    if (category.available_from && month < category.available_from) return false
+    if (category.availableFrom && month < category.availableFrom) return false
     
     // Category must not be expired (month <= available_until)
-    if (category.available_until && month > category.available_until) return false
+    // available_until not implemented in legacy Category interface
     
     return true
   })
@@ -2704,8 +2864,8 @@ async function saveCategories() {
     
     // Initialize balances for any new categories
     for (const category of categories) {
-      if (category.available_from && category.initial_budget !== undefined) {
-        const existingBalance = getCategoryBalance(category.name, category.available_from)
+      if (category.availableFrom && category.initialBudget !== undefined) {
+        const existingBalance = getCategoryBalance(category.name, category.availableFrom)
         if (!existingBalance) {
           await initializeCategoryBalance(category)
         }
@@ -2881,39 +3041,231 @@ const budgetCategories: BudgetCategory[] = [
   { name: 'Other', initialBudget: 150, distribution: 30 }
 ]
 
-function populateMonthSelector() {
+async function populateMonthSelector() {
   const monthSelectEl = document.getElementById('budget-month-select') as HTMLSelectElement
   if (!monthSelectEl) return
 
-  // Get unique months from transactions
-  const uniqueMonths = [...new Set(transactions.map(t => t.month))].sort()
+  // Get unique months from both transactions and category balances
+  const transactionMonths = transactions.map(t => t.month)
+  const balanceMonths = categoryBalances.map(b => b.month)
+  const allMonths = [...transactionMonths, ...balanceMonths]
+  const uniqueMonths = [...new Set(allMonths)].sort()
   
   // Clear existing options
   monthSelectEl.innerHTML = ''
   
-  uniqueMonths.forEach(month => {
+  // If we have months from transactions or balances, populate with them
+  if (uniqueMonths.length > 0) {
+    uniqueMonths.forEach(month => {
+      const option = document.createElement('option')
+      option.value = month
+      option.textContent = new Date(month + '-01').toLocaleDateString('en-US', { 
+        year: 'numeric', 
+        month: 'long' 
+      })
+      monthSelectEl.appendChild(option)
+    })
+    
+    // Auto-select the latest available month
+    const latestMonth = uniqueMonths[uniqueMonths.length - 1] // Last item in sorted array is most recent
+    monthSelectEl.value = latestMonth
+    // Trigger the budget overview rendering for the selected month
+    await renderBudgetOverview(latestMonth)
+  } else {
+    // If no transactions or balances yet, show current month
+    const currentDate = new Date()
+    const currentMonth = `${currentDate.getFullYear()}-${String(currentDate.getMonth() + 1).padStart(2, '0')}`
+    
     const option = document.createElement('option')
-    option.value = month
-    option.textContent = new Date(month + '-01').toLocaleDateString('en-US', { 
+    option.value = currentMonth
+    option.textContent = currentDate.toLocaleDateString('en-US', { 
       year: 'numeric', 
       month: 'long' 
     })
     monthSelectEl.appendChild(option)
-  })
-  
-  // Auto-select the latest available month
-  if (uniqueMonths.length > 0) {
-    const latestMonth = uniqueMonths[uniqueMonths.length - 1] // Last item in sorted array is most recent
-    monthSelectEl.value = latestMonth
-    // Trigger the budget overview rendering for the selected month
-    renderBudgetOverview(latestMonth)
+    monthSelectEl.value = currentMonth
+    
+    // Trigger the budget overview rendering for the current month
+    await renderBudgetOverview(currentMonth)
   }
 }
 
 function calculateTransactionSaldo(category: string, month: string): number {
   return transactions
-    .filter(t => t.category === category && t.month === month && t.transaction_type === 'expense')
-    .reduce((sum, t) => sum + t.amount, 0)
+    .filter(t => t.category === category && t.month === month)
+    .reduce((sum, t) => {
+      // Income adds to balance, expenses subtract from balance
+      return sum + (t.transaction_type === 'income' ? t.amount : -t.amount)
+    }, 0)
+}
+
+/**
+ * Get the initial balance for a category in a specific month
+ * This is either the category's initialBudget (first month) or the current_balance from previous month
+ * Also handles migration from old 'balance' column to new 'initial_balance' structure
+ */
+function getInitialBalanceForMonth(categoryName: string, month: string): number {
+  const category = categories.find(cat => cat.name === categoryName)
+  if (!category) return 0
+  
+  if (month === category.availableFrom) {
+    // For the first month, use the category's initialBudget from category management
+    return category.initialBudget || 0
+  } else {
+    // For subsequent months, use the current_balance from previous month
+    const previousMonth = getPreviousMonth(month)
+    if (previousMonth) {
+      const previousBalance = getCategoryBalance(categoryName, previousMonth)
+      if (previousBalance) {
+        // Check if we have the new structure with current_balance
+        if (previousBalance.current_balance !== undefined) {
+          return previousBalance.current_balance
+        }
+        // Handle migration: if only old 'balance' exists, use it as initial_balance
+        // @ts-ignore - temporary for migration
+        else if (previousBalance.balance !== undefined) {
+          // @ts-ignore
+          return previousBalance.balance
+        }
+      }
+      return category.initialBudget || 0
+    } else {
+      return category.initialBudget || 0
+    }
+  }
+}
+
+/**
+ * Calculate the current balance for a category in a specific month
+ * Formula: Initial Balance + Distribution + Transactions
+ */
+function calculateCurrentBalance(categoryName: string, month: string): number {
+  // Get the initial balance for this month
+  const initialBalance = getInitialBalanceForMonth(categoryName, month)
+  
+  // Get distribution for this month
+  const categoryDistribution = getCategoryDistribution(categoryName, month)
+  const distribution = categoryDistribution ? categoryDistribution.allocation : 0
+  
+  // Get transactions for this month
+  const transactionSaldo = calculateTransactionSaldo(categoryName, month)
+  
+  return initialBalance + distribution + transactionSaldo
+}
+
+/**
+ * Calculate and update both initial and current balance for a category in a specific month
+ * This ensures the data model is consistent with the new structure
+ * For new months, current_balance starts as the previous month's current_balance
+ */
+function calculateAndSetBalances(categoryName: string, month: string): void {
+  const category = categories.find(cat => cat.name === categoryName)
+  if (!category) return
+  
+  const initialBalance = getInitialBalanceForMonth(categoryName, month)
+  
+  // For the current_balance, we need to handle initialization differently
+  let currentBalance: number
+  
+  if (month === category.availableFrom) {
+    // First month: current_balance = initial_balance + distribution + transactions
+    currentBalance = calculateCurrentBalance(categoryName, month)
+  } else {
+    // Subsequent months: current_balance should start as previous month's current_balance
+    // and then be updated based on transactions and distributions
+    const previousMonth = getPreviousMonth(month)
+    if (previousMonth) {
+      const previousBalance = getCategoryBalance(categoryName, previousMonth)
+      if (previousBalance && previousBalance.current_balance !== undefined) {
+        // Start with previous month's current_balance, then add this month's changes
+        currentBalance = calculateCurrentBalance(categoryName, month)
+      } else {
+        // Fallback calculation
+        currentBalance = calculateCurrentBalance(categoryName, month)
+      }
+    } else {
+      currentBalance = calculateCurrentBalance(categoryName, month)
+    }
+  }
+  
+  setCategoryBalance(categoryName, month, initialBalance, currentBalance)
+}
+
+/**
+ * Recalculate and update both initial and current balance for a category in a specific month
+ * This ensures the stored balances match the calculated values
+ */
+async function recalculateAndStoreBalance(categoryName: string, month: string): Promise<void> {
+  const initialBalance = getInitialBalanceForMonth(categoryName, month)
+  const currentBalance = calculateCurrentBalance(categoryName, month)
+  
+  console.log(`Recalculating balances for "${categoryName}" in ${month}: initial=${initialBalance}, current=${currentBalance}`)
+  setCategoryBalance(categoryName, month, initialBalance, currentBalance)
+  await saveCategoryBalances()
+}
+
+/**
+ * Fix balance discrepancies by recalculating all balances for a specific month
+ */
+async function fixBalanceDiscrepancies(month: string): Promise<void> {
+  console.log(`Fixing balance discrepancies for month: ${month}`)
+  
+  for (const category of categories) {
+    if (!category.enabled) continue
+    
+    // Check if category is available in this month
+    if (category.availableFrom && month < category.availableFrom) continue
+    
+    await recalculateAndStoreBalance(category.name, month)
+  }
+  
+  console.log(`Completed fixing balance discrepancies for month: ${month}`)
+}
+
+/**
+ * Migrate existing balance data from old format to new format
+ * Old format: { balance: number }
+ * New format: { initial_balance: number, current_balance: number }
+ */
+async function migrateBalanceData(): Promise<void> {
+  console.log('Checking if balance data migration is needed...')
+  
+  let migrationNeeded = false
+  
+  for (const balance of categoryBalances) {
+    // @ts-ignore - checking for old format
+    if (balance.balance !== undefined && (balance.initial_balance === undefined || balance.current_balance === undefined)) {
+      migrationNeeded = true
+      break
+    }
+  }
+  
+  if (!migrationNeeded) {
+    console.log('No balance data migration needed')
+    return
+  }
+  
+  console.log('Migrating balance data to new format...')
+  
+  for (const balance of categoryBalances) {
+    // @ts-ignore - migration from old format
+    if (balance.balance !== undefined && balance.initial_balance === undefined) {
+      // Rename 'balance' to 'initial_balance'
+      // @ts-ignore
+      balance.initial_balance = balance.balance
+      // @ts-ignore
+      delete balance.balance
+      
+      // Calculate current_balance based on initial_balance + distribution + transactions
+      const currentBalance = calculateCurrentBalance(balance.category_name, balance.month)
+      balance.current_balance = currentBalance
+      
+      console.log(`Migrated ${balance.category_name} for ${balance.month}: initial=${balance.initial_balance}, current=${balance.current_balance}`)
+    }
+  }
+  
+  await saveCategoryBalances()
+  console.log('Balance data migration completed')
 }
 
 function calculateMonthlySalary(month: string): number {
@@ -2956,13 +3308,13 @@ function getMonthlyDistributions(month: string): { [key: string]: number } {
   // Get valid categories for this month
   const validCategories = categories.filter(category => {
     // Check if category is active
-    if (category.status !== 'active') return false
+    if (!category.enabled) return false
     
     // Category must be available (month >= available_from)
-    if (category.available_from && month < category.available_from) return false
+    if (category.availableFrom && month < category.availableFrom) return false
     
     // Category must not be expired (month <= available_until)
-    if (category.available_until && month > category.available_until) return false
+    // available_until not implemented in legacy Category interface
     
     // Month is between available_from and available_until (both inclusive)
     return true
@@ -2991,13 +3343,17 @@ function getMonthlyDistributions(month: string): { [key: string]: number } {
   return distributions
 }
 
-function renderBudgetOverview(selectedMonth: string) {
+async function renderBudgetOverview(selectedMonth: string) {
   const budgetOverviewEl = document.getElementById('budget-overview')
   const budgetTableBodyEl = document.getElementById('budget-table-body')
   
   if (!budgetOverviewEl || !budgetTableBodyEl) return
 
   budgetOverviewEl.style.display = 'block'
+  
+  // Ensure balance data migration is completed and fix any discrepancies
+  await migrateBalanceData()
+  await fixBalanceDiscrepancies(selectedMonth)
   
   console.log(`=== BUDGET OVERVIEW DEBUG ===`)
   console.log(`Selected month: ${selectedMonth}`)
@@ -3013,17 +3369,17 @@ function renderBudgetOverview(selectedMonth: string) {
   // Filter categories that are valid for the selected month
   const validCategories = categories.filter(category => {
     // Check if category is active
-    if (category.status !== 'active') return false
+    if (!category.enabled) return false
     
-    // Category must be available (selectedMonth >= available_from)
-    if (category.available_from && selectedMonth < category.available_from) {
+    // Category must be available (selectedMonth >= availableFrom)
+    if (category.availableFrom && selectedMonth < category.availableFrom) {
       return false
     }
     
-    // Category must not be expired (selectedMonth <= available_until)
-    if (category.available_until && selectedMonth > category.available_until) {
-      return false
-    }
+    // available_until not implemented in legacy Category interface
+    // if (category.availableUntil && selectedMonth > category.availableUntil) {
+    //   return false
+    // }
     
     // If we get here, the category is valid for this month
     return true
@@ -3035,27 +3391,17 @@ function renderBudgetOverview(selectedMonth: string) {
   const monthlyDistributions = getMonthlyDistributions(selectedMonth)
   
   budgetTableBodyEl.innerHTML = validCategories.map(category => {
-    // Get the current balance for this month
-    const categoryBalance = getCategoryBalance(category.name, selectedMonth)
-    const currentBalance = categoryBalance ? categoryBalance.balance : 0
+      // Get the balance data using the new data model
+    const balanceData = getCategoryBalance(category.name, selectedMonth)
     
-    // Get the initial budget (balance from previous month or category's initial_budget)
-    const previousMonth = getPreviousMonth(selectedMonth)
-    let initialBudget = category.initial_budget || 0
+    // Use stored values if available, otherwise calculate them
+    const initialBudget = balanceData ? balanceData.initial_balance : getInitialBalanceForMonth(category.name, selectedMonth)
+    const currentBalance = balanceData ? balanceData.current_balance : calculateCurrentBalance(category.name, selectedMonth)
     
-    if (previousMonth) {
-      const previousBalance = getCategoryBalance(category.name, previousMonth)
-      if (previousBalance) {
-        initialBudget = previousBalance.balance
-      }
-    }
-    
-    // Calculate actual transactions for this month
-    const transactionSaldo = calculateTransactionSaldo(category.name, selectedMonth)
-    
-    // Get actual distribution for this category in this month (default to 0)
+    // Get distribution and transactions for display
     const categoryDistribution = getCategoryDistribution(category.name, selectedMonth)
     const distribution = categoryDistribution ? categoryDistribution.allocation : 0
+    const transactionSaldo = calculateTransactionSaldo(category.name, selectedMonth)
     
     return `
       <div class="budget-row">
@@ -3186,14 +3532,11 @@ async function finishDistributionEditing(month: string) {
     // Update distribution
     setCategoryDistribution(categoryName, month, change.newValue)
     
-    // Update balance (add the difference to current balance)
-    const balanceChange = change.newValue - change.oldValue
-    const currentBalance = getCategoryBalance(categoryName, month)
-    if (currentBalance) {
-      const newBalance = currentBalance.balance + balanceChange
-      setCategoryBalance(categoryName, month, newBalance)
-      console.log(`Updated ${categoryName}: distribution ${change.oldValue} → ${change.newValue}, balance changed by ${balanceChange}`)
-    }
+    // Recalculate both initial and current balance using the new data model
+    const initialBalance = getInitialBalanceForMonth(categoryName, month)
+    const currentBalance = calculateCurrentBalance(categoryName, month)
+    setCategoryBalance(categoryName, month, initialBalance, currentBalance)
+    console.log(`Updated ${categoryName}: distribution ${change.oldValue} → ${change.newValue}, balances: initial=${initialBalance}, current=${currentBalance}`)
   }
   
   // Save to files
@@ -3227,7 +3570,7 @@ async function finishDistributionEditing(month: string) {
   }
   
   // Re-render the budget overview to show updated values
-  renderBudgetOverview(month)
+  await renderBudgetOverview(month)
   
   console.log(`Finished editing distributions for ${month}`)
 }

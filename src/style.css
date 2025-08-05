@@ -191,12 +191,13 @@
 
 /* New Transaction Form Container */
 .transaction-form-container {
-  background: #ffffff;
+  background: #ffffff !important;
   border-radius: 16px;
   box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
   border: 1px solid rgba(0, 0, 0, 0.06);
   margin-bottom: 2rem;
   padding: 1.5rem;
+  color: #000000 !important;
 }
 
 .form-actions {
@@ -259,33 +260,36 @@
 
 /* Transaction Form Table */
 .transaction-form-table {
-  background: #ffffff;
+  background: #ffffff !important;
   border-radius: 12px;
   overflow: hidden;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
   border: 1px solid rgba(0, 0, 0, 0.06);
+  color: #000000 !important;
 }
 
 .form-header {
   display: grid;
-  grid-template-columns: 120px 2fr 120px 1.5fr 1.5fr 120px;
-  gap: 1rem;
+  grid-template-columns: 100px 200px 100px 150px 130px 100px;
+  gap: 0.75rem;
   padding: 1rem;
-  background: #f8f9fa;
+  background: #f8f9fa !important;
   font-weight: 600;
   font-size: 0.875rem;
-  color: var(--gray-700);
+  color: #000000 !important;
   text-transform: uppercase;
   letter-spacing: 0.5px;
 }
 
 .form-row {
   display: grid;
-  grid-template-columns: 120px 2fr 120px 1.5fr 1.5fr 120px;
-  gap: 1rem;
+  grid-template-columns: 100px 200px 100px 150px 130px 100px;
+  gap: 0.75rem;
   padding: 1rem;
   border-bottom: 1px solid var(--gray-200);
   align-items: center;
+  background: #ffffff !important;
+  color: #000000 !important;
 }
 
 .form-row:last-child {
@@ -294,14 +298,14 @@
 
 .form-row input {
   padding: 0.875rem 1rem;
-  border: 2px solid #f1f5f9;
+  border: 2px solid #e2e8f0;
   border-radius: 12px;
   font-size: 0.875rem;
   background: #ffffff !important;
-  color: #1e293b !important;
+  color: #1e3a8a !important;
   transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
-  -webkit-text-fill-color: #1e293b !important;
+  -webkit-text-fill-color: #1e3a8a !important;
 }
 
 .form-row input:focus {
@@ -319,18 +323,18 @@
 /* Modern Custom Select Styling */
 .form-row select {
   padding: 0.875rem 1rem;
-  border: 2px solid #f1f5f9;
+  border: 2px solid #e2e8f0;
   border-radius: 12px;
   font-size: 0.875rem;
   background: #ffffff !important;
-  color: #1e293b !important;
+  color: #1e3a8a !important;
   cursor: pointer;
   transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
   appearance: none;
   -webkit-appearance: none;
   -moz-appearance: none;
-  -webkit-text-fill-color: #1e293b !important;
+  -webkit-text-fill-color: #1e3a8a !important;
 }
 
 .form-row select:hover {
@@ -349,8 +353,8 @@
 /* Style select options */
 .form-row select option {
   padding: 0.75rem 1rem;
-  background: #ffffff;
-  color: var(--gray-800);
+  background: #ffffff !important;
+  color: #1e3a8a !important;
   border: none;
 }
 
@@ -366,28 +370,30 @@
 
 /* Recent Transactions Table */
 .recent-transactions {
-  background: #ffffff;
+  background: #ffffff !important;
   border-radius: 16px;
   box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
   border: 1px solid rgba(0, 0, 0, 0.06);
   padding: 1.5rem;
+  color: #000000 !important;
 }
 
 .recent-transactions h3 {
   margin-bottom: 1.5rem;
-  color: var(--gray-800);
+  color: #000000 !important;
   font-size: 1.25rem;
   font-weight: 600;
 }
 
 .transactions-table-container {
-  background: #ffffff;
+  background: #ffffff !important;
   border-radius: 12px;
   overflow: hidden;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
   border: 1px solid rgba(0, 0, 0, 0.06);
   max-height: 500px;
   overflow-y: auto;
+  color: #000000 !important;
 }
 
 .transactions-table-header {
@@ -395,10 +401,10 @@
   grid-template-columns: 100px 2fr 120px 1.5fr 1.5fr 100px 120px 80px;
   gap: 1rem;
   padding: 0.25rem 1rem;
-  background: #f8f9fa;
+  background: #f8f9fa !important;
   font-weight: 600;
   font-size: 0.75rem;
-  color: var(--gray-700);
+  color: #000000 !important;
   text-transform: uppercase;
   letter-spacing: 0.5px;
   position: sticky;
@@ -415,10 +421,12 @@
   align-items: center;
   font-size: 0.875rem;
   transition: background-color 0.2s ease;
+  background: #ffffff !important;
+  color: #000000 !important;
 }
 
 .transaction-row:hover {
-  background: #f8f9fa;
+  background: #f8f9fa !important;
 }
 
 .transaction-row:last-child {
@@ -458,9 +466,9 @@
 .transaction-row .category,
 .transaction-row .account {
   font-size: 0.75rem;
-  color: var(--gray-600);
+  color: #000000 !important;
   padding: 0.125rem 0.5rem;
-  background: var(--gray-100);
+  background: #f1f5f9 !important;
   border-radius: 12px;
   text-align: center;
   font-weight: 500;
@@ -469,30 +477,33 @@
 .transaction-row .type {
   text-transform: capitalize;
   font-size: 0.75rem;
-  color: var(--gray-500);
+  color: #000000 !important;
   font-weight: 600;
   text-align: center;
   padding: 0.125rem 0.375rem;
-  background: var(--gray-100);
+  background: #f1f5f9 !important;
   border-radius: 8px;
 }
 
 .transaction-row.income .type {
-  color: var(--success-600);
+  color: #10b981 !important;
+  background: #f1f5f9 !important;
 }
 
 .transaction-row.expense .type {
-  color: var(--error-600);
+  color: #ef4444 !important;
+  background: #f1f5f9 !important;
 }
 
 .transaction-row.transfer .type {
-  color: var(--warning-600);
+  color: #3b82f6 !important;
+  background: #f1f5f9 !important;
 }
 
 .transaction-row .date,
 .transaction-row .month {
   font-size: 0.75rem;
-  color: var(--gray-500);
+  color: #000000 !important;
   font-weight: 500;
   text-align: center;
 }
@@ -871,33 +882,35 @@
 .settings-header h2 {
   font-size: 2rem;
   font-weight: 600;
-  color: var(--gray-900);
+  color: #000000 !important;
 }
 
 .settings-section {
-  background: #ffffff;
+  background: #ffffff !important;
   border-radius: 16px;
   box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
   border: 1px solid rgba(0, 0, 0, 0.06);
   padding: 2rem;
   margin-bottom: 2rem;
+  color: #000000 !important;
 }
 
 .settings-section h3 {
   font-size: 1.5rem;
   font-weight: 600;
-  color: var(--gray-800);
+  color: #000000 !important;
   margin-bottom: 1.5rem;
   padding-bottom: 0.5rem;
   border-bottom: 1px solid var(--gray-200);
 }
 
 .categories-container {
-  background: transparent;
+  background: #ffffff !important;
   border-radius: 0;
   box-shadow: none;
   border: none;
   padding: 0;
+  color: #000000 !important;
 }
 
 .categories-header {
@@ -909,7 +922,7 @@
 
 .categories-header h2 {
   margin: 0;
-  color: var(--gray-800);
+  color: #000000 !important;
   font-size: 1.5rem;
   font-weight: 600;
 }
@@ -920,11 +933,12 @@
 }
 
 .categories-table-container {
-  background: #ffffff;
+  background: #ffffff !important;
   border-radius: 12px;
   overflow: hidden;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
   border: 1px solid rgba(0, 0, 0, 0.06);
+  color: #000000 !important;
 }
 
 .categories-table-header {
@@ -932,11 +946,11 @@
   grid-template-columns: 2fr 1.2fr 1.2fr 1.2fr;
   gap: 1rem;
   padding: 1rem;
-  background: linear-gradient(135deg, var(--primary-50), var(--primary-100));
-  border-bottom: 2px solid var(--primary-200);
+  background: #f8f9fa !important;
+  border-bottom: 2px solid var(--gray-200);
   font-weight: 700;
   font-size: 0.875rem;
-  color: var(--primary-900);
+  color: #000000 !important;
   text-transform: uppercase;
   letter-spacing: 0.75px;
   position: sticky;
@@ -953,7 +967,8 @@
   align-items: center;
   font-size: 0.875rem;
   transition: all 0.2s ease;
-  background: #ffffff;
+  background: #ffffff !important;
+  color: #000000 !important;
 }
 
 .category-row:hover {
@@ -1548,10 +1563,10 @@ input:disabled + .toggle-slider:before {
   }
 
   .form-row input {
-    background: rgba(51, 65, 85, 0.9) !important;
-    color: var(--gray-100) !important;
-    border-color: var(--gray-600);
-    -webkit-text-fill-color: var(--gray-100) !important;
+    background: #ffffff !important;
+    color: #1e3a8a !important;
+    border-color: #e2e8f0;
+    -webkit-text-fill-color: #1e3a8a !important;
   }
 
   .form-row input:focus {
@@ -1560,10 +1575,10 @@ input:disabled + .toggle-slider:before {
   }
 
   .form-row select {
-    background: rgba(51, 65, 85, 0.9) !important;
-    color: var(--gray-100) !important;
-    border-color: var(--gray-600);
-    -webkit-text-fill-color: var(--gray-100) !important;
+    background: #ffffff !important;
+    color: #1e3a8a !important;
+    border-color: #e2e8f0;
+    -webkit-text-fill-color: #1e3a8a !important;
   }
 
   .form-row select:hover {
@@ -1578,8 +1593,8 @@ input:disabled + .toggle-slider:before {
 
 
   .form-row select option {
-    background: var(--gray-800);
-    color: var(--gray-100);
+    background: #ffffff !important;
+    color: #1e3a8a !important;
   }
 
   .transaction-row {
@@ -1593,36 +1608,39 @@ input:disabled + .toggle-slider:before {
   .transaction-row .category,
   .transaction-row .account,
   .transaction-row .type {
-    background: var(--gray-600);
-    color: var(--gray-300);
+    background: #f1f5f9 !important;
+    color: #000000 !important;
   }
 
   /* Dark mode categories table styling */
   .categories-table-container {
-    background: rgba(30, 41, 59, 0.8);
-    border: 1px solid rgba(71, 85, 105, 0.3);
+    background: #ffffff !important;
+    border: 1px solid rgba(0, 0, 0, 0.06);
+    color: #000000 !important;
   }
 
   .categories-table-header {
-    background: linear-gradient(135deg, rgba(14, 165, 233, 0.1), rgba(14, 165, 233, 0.2));
-    border-bottom: 2px solid var(--primary-400);
-    color: var(--primary-300);
+    background: #f8f9fa !important;
+    border-bottom: 2px solid var(--gray-200);
+    color: #000000 !important;
   }
 
   .category-row {
-    background: rgba(51, 65, 85, 0.6);
-    border-bottom-color: var(--gray-600);
+    background: #ffffff !important;
+    border-bottom-color: var(--gray-200);
+    color: #000000 !important;
   }
 
   .category-row:hover {
-    background: rgba(14, 165, 233, 0.15);
-    border-left: 3px solid var(--primary-400);
-    box-shadow: 0 2px 8px rgba(14, 165, 233, 0.2);
+    background: var(--primary-50) !important;
+    border-left: 3px solid var(--primary-500);
+    box-shadow: 0 2px 8px rgba(14, 165, 233, 0.1);
   }
 
   .settings-section {
-    background: rgba(30, 41, 59, 0.8);
-    border: 1px solid rgba(71, 85, 105, 0.3);
+    background: #ffffff !important;
+    border: 1px solid rgba(0, 0, 0, 0.06);
+    color: #000000 !important;
   }
 }
 
