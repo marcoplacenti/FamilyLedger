@@ -46,6 +46,7 @@ export interface DatabaseTransaction {
 export interface Category {
   id?: number;
   name: string;
+  group?: 'Housing' | 'Recreational' | 'Utilities' | 'Health' | 'Savings';
   available_from?: string;                            // Format: "YYYY-MM"
   available_until?: string;                           // Format: "YYYY-MM"
   initial_budget?: number;
@@ -122,6 +123,19 @@ export interface CategoryDistribution {
   category_name: string;                              // Name of the category
   month: string;                                      // Format: "YYYY-MM"
   allocation: number;                                 // Distribution allocation for this category in this month
+  created_at?: string;
+  updated_at?: string;
+}
+
+/**
+ * Account Balance interface for tracking account balances per month
+ */
+export interface AccountBalance {
+  id?: number;
+  account_name: string;                               // Name of the account
+  month: string;                                      // Format: "YYYY-MM"
+  initial_balance: number;                            // Balance at start of month
+  current_balance: number;                            // Balance at end of month (initial_balance + transactions)
   created_at?: string;
   updated_at?: string;
 }

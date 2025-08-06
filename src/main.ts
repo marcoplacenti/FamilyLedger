@@ -39,7 +39,7 @@ import {
 } from './database/index';
 
 // TYPE IMPORTS
-import { Category as DatabaseCategory, CategoryBalance, CategoryDistribution, Account } from './types';
+import { Category as DatabaseCategory, CategoryBalance, CategoryDistribution, Account, AccountBalance } from './types';
 
 // ============================================================================
 // DATA STRUCTURES & INTERFACES
@@ -766,7 +766,8 @@ async function loadTransactions() {
       loadCategoriesIntoGlobal(),
       loadAccountsIntoGlobal(),
       loadCategoryBalances(),
-      loadCategoryDistributions()
+      loadCategoryDistributions(),
+      loadAccountBalances()
     ])
     console.log('Parallel data loading completed')
     let loadedTransactions: Transaction[] = []
@@ -788,10 +789,11 @@ async function loadTransactions() {
         
         // Load categories, accounts, and other data from Google Drive in parallel
         console.log('Loading categories, accounts, and other data from Google Drive in parallel...')
-        const [categoriesContent, accountsContent, , ] = await Promise.all([
+        const [categoriesContent, accountsContent, , , ] = await Promise.all([
           loadFromGoogleDrive('categories.json'),
           loadFromGoogleDrive('accounts.json'),
           loadFromGoogleDrive('category_balance.json'),
+          loadFromGoogleDrive('account_balance.json'),
           loadFromGoogleDrive('distributions.json')
         ])
         
@@ -1014,9 +1016,12 @@ function setupEventListeners() {
       const target = e.target as HTMLSelectElement
       const selectedMonth = target.value
       if (selectedMonth) {
+        await renderAccountsOverview(selectedMonth)
         await renderBudgetOverview(selectedMonth)
       } else {
+        const accountsOverviewEl = document.getElementById('accounts-overview')
         const budgetOverviewEl = document.getElementById('budget-overview')
+        if (accountsOverviewEl) accountsOverviewEl.style.display = 'none'
         if (budgetOverviewEl) budgetOverviewEl.style.display = 'none'
       }
     })
@@ -1407,6 +1412,7 @@ let editingCategories = false                     // Flag for category edit mode
 interface Category {
   id: string              // Unique identifier
   name: string            // Display name (e.g., "Groceries", "Utilities")
+  group?: 'Housing' | 'Recreational' | 'Utilities' | 'Health' | 'Savings'  // Category group for organization
   enabled: boolean        // Whether category is available for new transactions
   availableFrom: string   // Date when category becomes available (YYYY-MM format)
   initialBudget: number   // Starting budget amount for the category
@@ -1421,6 +1427,7 @@ let categories: Category[] = []                    // All available categories
 let categoryBalances: CategoryBalance[] = []       // All category balances per month
 let categoryDistributions: CategoryDistribution[] = [] // All category distributions per month
 let accounts: Account[] = []                       // All available accounts
+let accountBalances: AccountBalance[] = []         // All account balances per month
 
 // Performance optimization flags
 let migrationCompleted = false
@@ -1469,6 +1476,7 @@ async function loadCategoriesIntoGlobal(): Promise<void> {
       categories = (result.data || []).map(dbCat => ({
         id: dbCat.id?.toString() || '',
         name: dbCat.name,
+        group: dbCat.group,
         enabled: dbCat.status === 'active',
         availableFrom: dbCat.available_from || '',
         initialBudget: dbCat.initial_budget || 0
@@ -1574,6 +1582,72 @@ async function saveCategoryBalances(): Promise<void> {
     }
   } catch (error) {
     console.error('Error saving category balances:', error)
+    throw error
+  }
+}
+
+/**
+ * Get the file path for account balances storage
+ */
+async function getAccountBalancesPath(): Promise<string> {
+  if (dataStoragePath) {
+    return await join(dataStoragePath, 'account_balance.json')
+  } else {
+    const home = await homeDir()
+    const defaultPath = await join(home, '.familyledger')
+    return await join(defaultPath, 'account_balance.json')
+  }
+}
+
+/**
+ * Load account balances from file
+ */
+async function loadAccountBalances(): Promise<void> {
+  try {
+    const balancesPath = await getAccountBalancesPath()
+    if (await exists(balancesPath)) {
+      const content = await readTextFile(balancesPath)
+      accountBalances = JSON.parse(content || '[]')
+      console.log(`Loaded ${accountBalances.length} account balances`)
+    } else {
+      accountBalances = []
+      console.log('No account balances file found, starting fresh')
+    }
+  } catch (error) {
+    console.error('Error loading account balances:', error)
+    accountBalances = []
+  }
+}
+
+/**
+ * Save account balances to JSON file
+ */
+async function saveAccountBalances(): Promise<void> {
+  try {
+    const content = JSON.stringify(accountBalances, null, 2)
+    
+    if (storageType === 'googledrive') {
+      console.log('Saving account balances to Google Drive...')
+      const success = await saveToGoogleDrive('account_balance.json', content)
+      
+      if (success) {
+        // Also save to local cache if we have a path
+        if (dataStoragePath) {
+          const cacheFile = await join(dataStoragePath, 'account_balance.json')
+          await writeTextFile(cacheFile, content)
+        }
+        console.log(`✓ Saved ${accountBalances.length} account balances to Google Drive`)
+      } else {
+        throw new Error('Failed to save account balances to Google Drive')
+      }
+    } else {
+      // Local storage
+      const balancesPath = await getAccountBalancesPath()
+      await writeTextFile(balancesPath, content)
+      console.log(`✓ Saved ${accountBalances.length} account balances locally`)
+    }
+  } catch (error) {
+    console.error('Error saving account balances:', error)
     throw error
   }
 }
@@ -2968,6 +3042,16 @@ async function renderCategoriesTable() {
         <div class="category-name">
           <input type="text" class="category-name-input" value="${category.name}" ${!editingCategories ? 'disabled' : ''} />
         </div>
+        <div class="category-group">
+          <select class="category-group-input" ${!editingCategories ? 'disabled' : ''}>
+            <option value="">Select Group</option>
+            <option value="Housing" ${category.group === 'Housing' ? 'selected' : ''}>Housing</option>
+            <option value="Recreational" ${category.group === 'Recreational' ? 'selected' : ''}>Recreational</option>
+            <option value="Utilities" ${category.group === 'Utilities' ? 'selected' : ''}>Utilities</option>
+            <option value="Health" ${category.group === 'Health' ? 'selected' : ''}>Health</option>
+            <option value="Savings" ${category.group === 'Savings' ? 'selected' : ''}>Savings</option>
+          </select>
+        </div>
         <div class="category-available-from">
           <input type="month" class="category-available-from-input" value="${category.available_from || ''}" ${!editingCategories ? 'disabled' : ''} />
         </div>
@@ -3037,15 +3121,19 @@ async function saveCategories() {
     categoryRows.forEach(row => {
       const categoryId = row.getAttribute('data-category-id')
       const nameInput = row.querySelector('.category-name-input') as HTMLInputElement
+      const groupInput = row.querySelector('.category-group-input') as HTMLSelectElement
       const availableFromInput = row.querySelector('.category-available-from-input') as HTMLInputElement
       const availableUntilInput = row.querySelector('.category-available-until-input') as HTMLInputElement
       const budgetInput = row.querySelector('.category-budget-input') as HTMLInputElement
       
-      if (categoryId && nameInput && availableFromInput && availableUntilInput && budgetInput) {
+      if (categoryId && nameInput && groupInput && availableFromInput && availableUntilInput && budgetInput) {
         const name = nameInput.value.trim()
         if (name) {
           const categoryData = {
             name,
+            group: (groupInput.value && ['Housing', 'Recreational', 'Utilities', 'Health', 'Savings'].includes(groupInput.value)) 
+              ? groupInput.value as 'Housing' | 'Recreational' | 'Utilities' | 'Health' | 'Savings' 
+              : undefined,
             available_from: availableFromInput.value || undefined,
             available_until: availableUntilInput.value || undefined,
             initial_budget: parseFloat(budgetInput.value) || 0,
@@ -3197,6 +3285,16 @@ async function addNewCategory() {
     <div class="category-row" data-category-id="temp-${tempId}">
       <div class="category-name">
         <input type="text" class="category-name-input" value="${newCategory.name}" />
+      </div>
+      <div class="category-group">
+        <select class="category-group-input">
+          <option value="">Select Group</option>
+          <option value="Housing">Housing</option>
+          <option value="Recreational">Recreational</option>
+          <option value="Utilities">Utilities</option>
+          <option value="Health">Health</option>
+          <option value="Savings">Savings</option>
+        </select>
       </div>
       <div class="category-available-from">
         <input type="month" class="category-available-from-input" value="${newCategory.available_from}" />
@@ -3713,6 +3811,7 @@ async function populateMonthSelector() {
     const latestMonth = uniqueMonths[uniqueMonths.length - 1] // Last item in sorted array is most recent
     monthSelectEl.value = latestMonth
     // Trigger the budget overview rendering for the selected month
+    await renderAccountsOverview(latestMonth)
     await renderBudgetOverview(latestMonth)
   } else {
     // If no transactions or balances yet, show current month
@@ -3729,6 +3828,7 @@ async function populateMonthSelector() {
     monthSelectEl.value = currentMonth
     
     // Trigger the budget overview rendering for the current month
+    await renderAccountsOverview(currentMonth)
     await renderBudgetOverview(currentMonth)
   }
 }
@@ -4017,16 +4117,16 @@ function getMonthlyDistributions(month: string): { [key: string]: number } {
 
 async function renderBudgetOverview(selectedMonth: string) {
   const budgetOverviewEl = document.getElementById('budget-overview')
-  const budgetTableBodyEl = document.getElementById('budget-table-body')
+  const budgetTablesContainerEl = document.getElementById('budget-tables-container')
   
-  if (!budgetOverviewEl || !budgetTableBodyEl) return
+  if (!budgetOverviewEl || !budgetTablesContainerEl) return
 
   budgetOverviewEl.style.display = 'block'
   
   // Check if we have cached HTML for this month
   const cacheKey = `budget-${selectedMonth}`
   if (performanceCache.isValid() && performanceCache.budgetOverviews.has(cacheKey)) {
-    budgetTableBodyEl.innerHTML = performanceCache.budgetOverviews.get(cacheKey)!
+    budgetTablesContainerEl.innerHTML = performanceCache.budgetOverviews.get(cacheKey)!
     console.log(`Used cached budget overview for ${selectedMonth}`)
     return
   }
@@ -4091,24 +4191,70 @@ async function renderBudgetOverview(selectedMonth: string) {
     })
   })
   
-  const budgetHTML = validCategories.map(category => {
-    // Use pre-computed balance data for maximum performance
-    const data = categoryBalanceData.get(category.name)!
-    
-    return `
-      <div class="budget-row">
-        <div class="category">${category.name}</div>
-        <div class="initial-budget">${formatCurrency(data.initialBalance)}</div>
-        <div class="distribution">${formatCurrency(data.distribution)}</div>
-        <div class="transactions">${formatCurrency(data.transactionSaldo)}</div>
-        <div class="current-balance ${data.currentBalance < 0 ? 'negative' : 'positive'}">${formatCurrency(data.currentBalance)}</div>
-      </div>
-    `
-  }).join('')
+  // Group categories by their group field
+  const categoryGroups = new Map<string, typeof validCategories>()
+  const availableGroups = ['Housing', 'Utilities', 'Health', 'Recreational', 'Savings', 'Other']
+  
+  // Initialize all groups
+  availableGroups.forEach(group => categoryGroups.set(group, []))
+  
+  // Group valid categories by their group field
+  validCategories.forEach(category => {
+    const group = category.group || 'Other'
+    console.log(`Assigning category "${category.name}" to group "${group}"`)
+    if (!categoryGroups.has(group)) {
+      categoryGroups.set(group, [])
+    }
+    categoryGroups.get(group)!.push(category)
+  })
+  
+  // Debug: log the grouping results
+  console.log('Category grouping results:', Array.from(categoryGroups.entries()).map(([group, cats]) => 
+    `${group}: ${cats.map(c => c.name).join(', ')}`
+  ))
+  
+  // Generate HTML for each group that has categories
+  const budgetTablesHTML = Array.from(categoryGroups.entries())
+    .filter(([, categories]) => categories.length > 0) // Only show groups with categories
+    .map(([groupName, categories]) => {
+      const groupRows = categories.map(category => {
+        const data = categoryBalanceData.get(category.name)!
+        
+        return `
+          <div class="budget-row">
+            <div class="category">${category.name}</div>
+            <div class="initial-budget">${formatCurrency(data.initialBalance)}</div>
+            <div class="distribution">${formatCurrency(data.distribution)}</div>
+            <div class="transactions">${formatCurrency(data.transactionSaldo)}</div>
+            <div class="current-balance ${data.currentBalance < 0 ? 'negative' : 'positive'}">${formatCurrency(data.currentBalance)}</div>
+          </div>
+        `
+      }).join('')
+      
+      return `
+        <div class="budget-group-table">
+          <div class="budget-group-header">
+            <h4>${groupName}</h4>
+          </div>
+          <div class="budget-table-container">
+            <div class="budget-table-header">
+              <div>Category</div>
+              <div>Initial Budget</div>
+              <div>Distribution</div>
+              <div>Transactions</div>
+              <div>Current Balance</div>
+            </div>
+            <div class="budget-table-body">
+              ${groupRows}
+            </div>
+          </div>
+        </div>
+      `
+    }).join('')
   
   // Cache the generated HTML for fast month switching
-  performanceCache.budgetOverviews.set(cacheKey, budgetHTML)
-  budgetTableBodyEl.innerHTML = budgetHTML
+  performanceCache.budgetOverviews.set(cacheKey, budgetTablesHTML)
+  budgetTablesContainerEl.innerHTML = budgetTablesHTML
   
   // Add summary information showing salary vs distribution total (using pre-computed values)
   if (monthlySalary > 0) {
@@ -4125,6 +4271,102 @@ async function renderBudgetOverview(selectedMonth: string) {
   }
   
   console.log(`Budget overview cached for ${selectedMonth}`)
+}
+
+/**
+ * Render accounts overview table for the selected month
+ */
+async function renderAccountsOverview(selectedMonth: string) {
+  const accountsOverviewEl = document.getElementById('accounts-overview')
+  
+  if (!accountsOverviewEl) return
+
+  accountsOverviewEl.style.display = 'block'
+  
+  console.log(`Rendering accounts overview for ${selectedMonth}`)
+  
+  // Filter active accounts
+  const activeAccounts = accounts.filter(account => account.status === 'active')
+  
+  // Calculate total balance for all accounts
+  let totalBalance = 0
+  activeAccounts.forEach(account => {
+    // Find the account balance for this month
+    const accountBalance = accountBalances.find(balance => 
+      balance.account_name === account.name && balance.month === selectedMonth
+    )
+    
+    // Use current_balance from account_balance.json or fall back to initial_balance
+    const currentBalance = accountBalance ? accountBalance.current_balance : (account.initial_balance || 0)
+    totalBalance += currentBalance
+  })
+  
+  // Update the total balance display
+  const totalBalanceEl = document.getElementById('accounts-total-balance')
+  if (totalBalanceEl) {
+    totalBalanceEl.textContent = `Total: ${formatCurrency(totalBalance)}`
+  }
+  
+  // Group accounts by type
+  const accountsByType = {
+    checking: activeAccounts.filter(account => account.type === 'checking'),
+    savings: activeAccounts.filter(account => account.type === 'savings'),
+    investment: activeAccounts.filter(account => account.type === 'investment'),
+    other: activeAccounts.filter(account => !account.type || !['checking', 'savings', 'investment'].includes(account.type))
+  }
+  
+  // Helper function to generate account rows
+  const generateAccountRows = (accountsList: Account[]) => {
+    return accountsList.map(account => {
+      // Find the account balance for this month
+      const accountBalance = accountBalances.find(balance => 
+        balance.account_name === account.name && balance.month === selectedMonth
+      )
+      
+      // Use current_balance from account_balance.json or fall back to initial_balance
+      const currentBalance = accountBalance ? accountBalance.current_balance : (account.initial_balance || 0)
+      const balanceClass = currentBalance >= 0 ? 'balance-positive' : 'balance-negative'
+      
+      return `
+        <tr>
+          <td>${account.name}</td>
+          <td class="balance-amount ${balanceClass}">${formatCurrency(currentBalance)}</td>
+        </tr>
+      `
+    }).join('')
+  }
+  
+  // Render each account type table
+  const checkingBodyEl = document.getElementById('checking-accounts-body')
+  const savingsBodyEl = document.getElementById('savings-accounts-body')
+  const investmentBodyEl = document.getElementById('investment-accounts-body')
+  const otherBodyEl = document.getElementById('other-accounts-body')
+  
+  if (checkingBodyEl) {
+    checkingBodyEl.innerHTML = accountsByType.checking.length > 0 
+      ? generateAccountRows(accountsByType.checking)
+      : '<tr><td colspan="2" style="text-align: center; color: #9ca3af; font-style: italic;">No accounts</td></tr>'
+  }
+  
+  if (savingsBodyEl) {
+    savingsBodyEl.innerHTML = accountsByType.savings.length > 0 
+      ? generateAccountRows(accountsByType.savings)
+      : '<tr><td colspan="2" style="text-align: center; color: #9ca3af; font-style: italic;">No accounts</td></tr>'
+  }
+  
+  if (investmentBodyEl) {
+    investmentBodyEl.innerHTML = accountsByType.investment.length > 0 
+      ? generateAccountRows(accountsByType.investment)
+      : '<tr><td colspan="2" style="text-align: center; color: #9ca3af; font-style: italic;">No accounts</td></tr>'
+  }
+  
+  if (otherBodyEl) {
+    otherBodyEl.innerHTML = accountsByType.other.length > 0 
+      ? generateAccountRows(accountsByType.other)
+      : '<tr><td colspan="2" style="text-align: center; color: #9ca3af; font-style: italic;">No accounts</td></tr>'
+  }
+  
+  console.log(`Accounts overview rendered for ${selectedMonth}`)
 }
 
 /**

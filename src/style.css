@@ -686,6 +686,8 @@
   box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
   border: 1px solid rgba(0, 0, 0, 0.06);
   padding: 1.5rem;
+  width: 100%;
+  max-width: none;
 }
 
 .budget-overview h3 {
@@ -695,19 +697,53 @@
   font-weight: 600;
 }
 
-.budget-table-container {
+/* Budget Tables Container for grouped layout */
+.budget-tables-container {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 2rem;
+  margin-bottom: 2rem;
+  width: 100%;
+  max-width: none;
+}
+
+/* Individual Budget Group Table */
+.budget-group-table {
   background: #ffffff;
   border-radius: 12px;
   overflow: hidden;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
   border: 1px solid rgba(0, 0, 0, 0.06);
+  width: 100%;
+  min-width: 600px;
+}
+
+.budget-group-header {
+  background: var(--primary-600);
+  color: white;
+  padding: 0.75rem 1rem;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.1);
+}
+
+.budget-group-header h4 {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+.budget-table-container {
+  background: #ffffff;
+  border-radius: 0;
+  overflow: hidden;
+  box-shadow: none;
+  border: none;
 }
 
 .budget-table-header {
   display: grid;
   grid-template-columns: 2fr 1.2fr 1.2fr 1.2fr 1.2fr;
-  gap: 1rem;
-  padding: 0.75rem 1rem;
+  gap: 1.5rem;
+  padding: 1rem 1.25rem;
   background: #e9ecef;
   font-weight: 600;
   font-size: 0.75rem;
@@ -719,8 +755,8 @@
 .budget-row {
   display: grid;
   grid-template-columns: 2fr 1.2fr 1.2fr 1.2fr 1.2fr;
-  gap: 1rem;
-  padding: 0.75rem 1rem;
+  gap: 1.5rem;
+  padding: 1rem 1.25rem;
   border-bottom: 1px solid #dee2e6;
   align-items: center;
   font-size: 0.875rem;
@@ -761,6 +797,124 @@
 
 .budget-row .current-balance.negative {
   color: var(--error-600);
+}
+
+/* Accounts Overview Styling */
+.accounts-overview {
+  background: #ffffff;
+  border-radius: 12px;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
+  border: 1px solid rgba(0, 0, 0, 0.04);
+  padding: 1.5rem;
+  margin-bottom: 2rem;
+}
+
+.accounts-overview h3 {
+  margin: 0 0 1.5rem 0;
+  color: #374151;
+  font-size: 1.125rem;
+  font-weight: 600;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.accounts-overview .total-balance {
+  font-size: 1rem;
+  font-weight: 700;
+  color: #059669;
+  background: #ecfdf5;
+  padding: 0.25rem 0.75rem;
+  border-radius: 6px;
+  border: 1px solid #d1fae5;
+}
+
+.accounts-overview-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 1.5rem;
+}
+
+.account-type-table {
+  background: #ffffff;
+  border-radius: 8px;
+  border: 1px solid rgba(0, 0, 0, 0.06);
+  overflow: hidden;
+}
+
+.account-type-table h4 {
+  margin: 0;
+  padding: 0.75rem 1rem;
+  background: #f1f5f9;
+  color: #374151;
+  font-size: 0.875rem;
+  font-weight: 600;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.08);
+}
+
+.accounts-overview-table {
+  overflow: hidden;
+}
+
+.accounts-overview table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.8rem;
+}
+
+.accounts-overview th {
+  background: #f8fafc;
+  padding: 0.5rem 0.75rem;
+  text-align: left;
+  font-weight: 600;
+  color: #374151;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.08);
+  font-size: 0.75rem;
+}
+
+.accounts-overview td {
+  padding: 0.5rem 0.75rem;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.05);
+  color: #4b5563;
+}
+
+.accounts-overview tbody tr:hover {
+  background: #f9fafb;
+}
+
+.accounts-overview tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.accounts-overview .balance-amount {
+  font-weight: 600;
+  text-align: right;
+}
+
+.accounts-overview .balance-positive {
+  color: #059669;
+}
+
+.accounts-overview .balance-negative {
+  color: #dc2626;
+}
+
+/* Responsive design for smaller screens */
+@media (max-width: 1200px) {
+  .accounts-overview-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (max-width: 768px) {
+  .accounts-overview-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .budget-tables-container {
+    grid-template-columns: 1fr;
+    gap: 1rem;
+  }
 }
 
 /* Distribution editing input styling */
@@ -951,7 +1105,7 @@
 
 .categories-table-header {
   display: grid;
-  grid-template-columns: 2fr 1.2fr 1.2fr 1.2fr;
+  grid-template-columns: 2fr 1fr 1.2fr 1.2fr 1.2fr;
   gap: 1rem;
   padding: 1rem;
   background: #f8f9fa !important;
@@ -968,7 +1122,7 @@
 
 .category-row {
   display: grid;
-  grid-template-columns: 2fr 1.2fr 1.2fr 1.2fr;
+  grid-template-columns: 2fr 1fr 1.2fr 1.2fr 1.2fr;
   gap: 1rem;
   padding: 1rem;
   border-bottom: 1px solid var(--gray-200);
@@ -1019,7 +1173,9 @@ textarea:disabled {
 
 /* Category Input Fields - Enhanced visibility and contrast */
 .category-row .category-name-input,
-input.category-name-input {
+.category-row .category-group-input,
+input.category-name-input,
+select.category-group-input {
   width: 100%;
   padding: 0.5rem;
   border: 1px solid var(--gray-300);
@@ -1032,7 +1188,9 @@ input.category-name-input {
 }
 
 .category-row .category-name-input:disabled,
-input.category-name-input:disabled {
+.category-row .category-group-input:disabled,
+input.category-name-input:disabled,
+select.category-group-input:disabled {
   background: #f8f8f8 !important;
   color: #666666 !important;
   -webkit-text-fill-color: #666666 !important;
@@ -1041,7 +1199,9 @@ input.category-name-input:disabled {
 }
 
 .category-row .category-name-input:focus:not(:disabled),
-input.category-name-input:focus:not(:disabled) {
+.category-row .category-group-input:focus:not(:disabled),
+input.category-name-input:focus:not(:disabled),
+select.category-group-input:focus:not(:disabled) {
   outline: none;
   border-color: var(--primary-500);
   box-shadow: 0 0 0 2px rgba(14, 165, 233, 0.1);
@@ -2027,6 +2187,7 @@ input:disabled + .toggle-slider:before {
   }
 
   .category-name-input,
+  .category-group-input,
   .category-available-from-input,
   .category-available-until-input,
   .category-budget-input {

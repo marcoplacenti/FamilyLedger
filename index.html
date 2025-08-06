@@ -125,22 +125,86 @@
               </div>
             </div>
 
+            <div id="accounts-overview" class="accounts-overview" style="display: none;">
+              <h3>Accounts Overview <span id="accounts-total-balance" class="total-balance"></span></h3>
+              <div class="accounts-overview-grid">
+                <div class="account-type-table">
+                  <h4>Checking</h4>
+                  <div class="accounts-overview-table">
+                    <table>
+                      <thead>
+                        <tr>
+                          <th>Account</th>
+                          <th>Balance</th>
+                        </tr>
+                      </thead>
+                      <tbody id="checking-accounts-body">
+                        <!-- Checking account rows will be displayed here -->
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+
+                <div class="account-type-table">
+                  <h4>Savings</h4>
+                  <div class="accounts-overview-table">
+                    <table>
+                      <thead>
+                        <tr>
+                          <th>Account</th>
+                          <th>Balance</th>
+                        </tr>
+                      </thead>
+                      <tbody id="savings-accounts-body">
+                        <!-- Savings account rows will be displayed here -->
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+
+                <div class="account-type-table">
+                  <h4>Investment</h4>
+                  <div class="accounts-overview-table">
+                    <table>
+                      <thead>
+                        <tr>
+                          <th>Account</th>
+                          <th>Balance</th>
+                        </tr>
+                      </thead>
+                      <tbody id="investment-accounts-body">
+                        <!-- Investment account rows will be displayed here -->
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+
+                <div class="account-type-table">
+                  <h4>Other</h4>
+                  <div class="accounts-overview-table">
+                    <table>
+                      <thead>
+                        <tr>
+                          <th>Account</th>
+                          <th>Balance</th>
+                        </tr>
+                      </thead>
+                      <tbody id="other-accounts-body">
+                        <!-- Other account rows will be displayed here -->
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </div>
+            </div>
+
             <div id="budget-overview" class="budget-overview" style="display: none;">
               <div class="budget-header">
                 <h3>Budget Overview</h3>
                 <button id="edit-distributions-btn" class="edit-btn">Edit Distributions</button>
               </div>
-              <div class="budget-table-container">
-                <div class="budget-table-header">
-                  <div>Category</div>
-                  <div>Initial Budget</div>
-                  <div>Distribution</div>
-                  <div>Transactions</div>
-                  <div>Current Balance</div>
-                </div>
-                <div id="budget-table-body">
-                  <!-- Budget rows will be displayed here -->
-                </div>
+              <div id="budget-tables-container" class="budget-tables-container">
+                <!-- Budget tables grouped by category will be displayed here -->
               </div>
             </div>
           </div>
@@ -219,6 +283,7 @@
                   <div class="categories-table-container">
                     <div class="categories-table-header">
                       <div>Category Name</div>
+                      <div>Group</div>
                       <div>Available From</div>
                       <div>Available Until</div>
                       <div>Initial Budget</div>
